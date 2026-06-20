@@ -1,0 +1,7 @@
+# herald-ai 텔레그램 자격증명 템플릿
+# 사용법: 이 파일을 ~/.claude/skills/task-tracker/telegram.conf 로 복사 후 값 채우기
+#   cp config/telegram.conf.example ~/.claude/skills/task-tracker/telegram.conf
+#   chmod 600 ~/.claude/skills/task-tracker/telegram.conf
+# 봇 토큰: @BotFather 에서 발급, CHAT_ID: @userinfobot 또는 getUpdates 로 확인
+TOKEN="<your-telegram-bot-token>"
+CHAT_ID="<your-telegram-chat-id>"

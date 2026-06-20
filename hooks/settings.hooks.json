@@ -1,0 +1,70 @@
+{
+  "SessionStart": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "[ \"$CLIP2NOTE_SKIP_TRACKER\" = \"1\" ] || bash ~/.claude/skills/task-tracker/scripts/session-start.sh"
+        }
+      ]
+    }
+  ],
+  "SessionEnd": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "[ \"$CLIP2NOTE_SKIP_TRACKER\" = \"1\" ] || bash ~/.claude/skills/task-tracker/scripts/notify.sh session_end"
+        }
+      ]
+    }
+  ],
+  "UserPromptSubmit": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "[ \"$CLIP2NOTE_SKIP_TRACKER\" = \"1\" ] || echo '{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"[REMINDER] task-tracker 스킬을 반드시 먼저 호출하세요. 단순 질문 포함, 예외 없음.\"}}'",
+          "statusMessage": "task-tracker 리마인더 확인 중..."
+        },
+        {
+          "type": "command",
+          "command": "[ \"$CLIP2NOTE_SKIP_TRACKER\" = \"1\" ] || bash ~/.claude/skills/task-tracker/scripts/turn-start.sh"
+        }
+      ]
+    }
+  ],
+  "Notification": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "[ \"$CLIP2NOTE_SKIP_TRACKER\" = \"1\" ] || bash ~/.claude/skills/task-tracker/scripts/notify-question.sh"
+        }
+      ]
+    }
+  ],
+  "Stop": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "[ \"$CLIP2NOTE_SKIP_TRACKER\" = \"1\" ] || bash ~/.claude/skills/task-tracker/scripts/notify.sh done"
+        }
+      ]
+    }
+  ],
+  "PreToolUse": [
+    {
+      "matcher": "AskUserQuestion",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "[ \"$CLIP2NOTE_SKIP_TRACKER\" = \"1\" ] || bash ~/.claude/skills/task-tracker/scripts/notify-question.sh",
+          "statusMessage": "질문 알림 전송 중..."
+        }
+      ]
+    }
+  ]
+}
