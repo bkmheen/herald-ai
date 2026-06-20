@@ -1,0 +1,5 @@
+# Task Tracker 설정
+# 생성: 2026-04-06 11:54:11
+# 변경: 'task-tracker.sh setup' 재실행 또는 이 파일 직접 수정
+PLAN_NAME="Max 20x"
+PLAN_LIMIT=220000

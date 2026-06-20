@@ -1,0 +1,11 @@
+# 텔레그램 자격증명 (절대 커밋 금지)
+telegram.conf
+**/telegram.conf
+
+# task-tracker 런타임/개인 데이터
+skills/task-tracker/config
+skills/task-tracker/task_history.jsonl
+
+# OS
+.DS_Store
+*.swp
