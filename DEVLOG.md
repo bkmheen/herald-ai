@@ -5,6 +5,26 @@
 
 ---
 
+## 2026-06-20 — 설치 설명서 확장 및 함수 주석 보강 (v0.1.2)
+
+### 작업
+- 사용자 요청: "설치 설명서 및 주석 등을 모두 추가하라". 범위 확인 결과
+  ① README 설치 섹션 확장(별도 INSTALL.md 미생성), ② 부족한 함수 주석만 보강.
+- README: 사전 요구사항(macOS/Ubuntu)·설치 5단계 표·검증·업데이트/제거·FAQ 추가.
+- 스크립트: 헤더 docblock 은 이미 충분 → 주석 누락 함수에만 한 줄 역할 주석 추가.
+  `notify.sh` 4함수, `task-tracker.sh` 헬퍼 7함수.
+
+### 원칙
+- 동작(로직) 변경 0 — 주석/문서만. `bash -n` 통과.
+- 로컬 스킬(`~/.claude/skills/task-tracker`)과 배포본 스크립트를 `cp` 로 동기화,
+  `diff` 무차이 확인(재설치 시에도 동일 보장).
+
+### 영향 파일
+- `README.md`, `skills/task-tracker/scripts/task-tracker.sh`,
+  `skills/task-tracker/scripts/notify.sh`, `VERSION`, `CHANGELOG.md`.
+
+---
+
 ## 2026-06-20 — 비용 증감률 계산 정규화 (v0.1.1)
 
 ### 배경
