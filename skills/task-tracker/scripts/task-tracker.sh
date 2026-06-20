@@ -34,9 +34,10 @@ mkdir -p "$RUNTIME_DIR"
 
 # ── 유틸리티 ──────────────────────────────────────────
 get_timestamp() { date '+%Y-%m-%d %H:%M:%S'; }
-get_epoch() { date '+%s'; }
-format_number() { printf "%'d" "$1" 2>/dev/null || echo "$1"; }
+get_epoch() { date '+%s'; }                                      # 현재 시각 epoch(초)
+format_number() { printf "%'d" "$1" 2>/dev/null || echo "$1"; }   # 천 단위 콤마 숫자 포맷
 
+# config 파일에서 플랜 토큰 한도(PLAN_LIMIT)를 읽어 반환 (없으면 0)
 load_plan_limit() {
     local plan_limit=0
     if [[ -f "$CONFIG_FILE" ]]; then
@@ -46,6 +47,7 @@ load_plan_limit() {
     echo "$plan_limit"
 }
 
+# 토큰 한도값 → 플랜 표시명(Pro / Max 5x / Max 20x / Custom) 매핑
 get_plan_name() {
     case "$1" in
         44000)  echo "Pro" ;;
@@ -55,6 +57,7 @@ get_plan_name() {
     esac
 }
 
+# 오늘(당일) 자 ccusage 사용량 JSON 반환 (실패 시 error JSON + 비정상 종료코드)
 get_token_usage() {
     local today
     today=$(date '+%Y%m%d')
@@ -64,6 +67,7 @@ get_token_usage() {
     }
 }
 
+# 이번 달(월초~오늘) 누적 비용($) 합계 반환
 get_monthly_cost() {
     local month_start
     month_start=$(date '+%Y%m01')
@@ -135,6 +139,7 @@ get_rolling_30d() {
     echo "${last30}|${pct}"
 }
 
+# ccusage JSON → "input|output|total|cost" 한 줄로 파싱 (jq, 없으면 node 폴백)
 parse_token_summary() {
     local json="$1"
     if command -v jq &>/dev/null; then
@@ -154,6 +159,7 @@ parse_token_summary() {
     fi
 }
 
+# JSON 문자열에서 단일 필드값 추출 (jq, 없으면 node 폴백; fb=기본값)
 json_field() {
     local json="$1" field="$2" fb="${3:-}"
     if command -v jq &>/dev/null; then
@@ -302,6 +308,7 @@ read_mission() {
     echo "${m}-${t}"
 }
 
+# start 서브커맨드: 작업 시작 기록(STATE_FILE 생성)·미션 카운터 갱신·시작 토큰 스냅샷
 cmd_start() {
     if [[ ! -f "$CONFIG_FILE" ]]; then
         echo ""
@@ -584,6 +591,7 @@ cmd_mute_z() {
     echo "  🔕 Atelier Task Z mute (.muted + .z-active set)"
 }
 
+# Task Z mute 해제: .muted + .z-active 제거 → 알림 정상화
 cmd_unmute_z() {
     rm -f "$MUTED_FILE" "$Z_ACTIVE_FILE"
     echo "  🔔 Atelier Task Z unmute (.muted + .z-active cleared)"

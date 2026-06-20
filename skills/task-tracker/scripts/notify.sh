@@ -73,6 +73,7 @@ escape_html() {
     sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
 }
 
+# 초 단위 경과시간 → "N시간 M분 S초" 형태의 사람이 읽는 문자열로 변환
 format_elapsed() {
     local elapsed="$1"
     local h=$(( elapsed / 3600 ))
@@ -87,6 +88,7 @@ format_elapsed() {
     fi
 }
 
+# 현재(.current_task) 또는 직전(.last_task) 작업명을 상태 파일에서 읽어 반환
 read_task_name() {
     local src=""
     if [[ -f "$STATE_FILE" ]]; then
@@ -148,6 +150,7 @@ read_elapsed_str() {
     fi
 }
 
+# 텔레그램 Bot API 로 메시지 전송 (curl 우선, 없으면 python3 폴백; HTML 파싱모드)
 send_telegram() {
     local msg="$1"
     if [[ -n "${NOTIFY_DRY_RUN:-}" ]]; then
@@ -173,6 +176,7 @@ print(json.dumps(msg))
     wait
 }
 
+# macOS 데스크톱 알림 전송 (terminal-notifier 우선, 없으면 osascript). DRY_RUN 시 미전송
 send_macos() {
     local title="$1" body="$2"
     if [[ -n "${NOTIFY_DRY_RUN:-}" ]]; then
