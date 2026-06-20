@@ -93,6 +93,14 @@ bash uninstall.sh   # settings.json 의 herald 훅만 제거(스킬 보존)
 - [ ] **멀티 채널** — Discord / Slack / ntfy.
 - [ ] **Claude Code 플러그인 마켓플레이스** 배포(`/plugin install`).
 
+## 📜 변경 이력 · 개발 기록
+
+- **[CHANGELOG.md](CHANGELOG.md)** — 버전별 변경 요약(사용자용, Keep a Changelog 표준).
+- **[DEVLOG.md](DEVLOG.md)** — 변경 배경·의사결정 상세(개발자용).
+- **[VERSION](VERSION)** — 현재 버전 단일 출처.
+
+현재 버전: **0.1.1**
+
 ## 📄 라이선스
 
 MIT © 2026 bkmheen
