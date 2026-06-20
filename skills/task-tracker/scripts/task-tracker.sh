@@ -89,19 +89,49 @@ get_projected_monthly_cost() {
 }
 
 get_rolling_30d() {
-    # 과거 30일 비용 합계와, 그 직전 30일 대비 변동비율을 한 번의 ccusage 호출로 계산.
-    # 출력: "<last30_cost>|<pct>"  (pct 는 부호 포함 정수; 직전 30일 데이터 없으면 빈 값)
-    #   - last30  : 오늘 포함 최근 30일(period >= cut) 합계
-    #   - prev30  : 그 직전 30일(since ~ cut-1) 합계
-    #   - pct     : (last30 - prev30) / prev30 * 100, 반올림 후 부호 표시
-    local since cut json last30 prev30 pct
+    # 최근 30일 비용 합계와, 직전 30일 대비 변동률을 한 번의 ccusage 호출로 계산.
+    # 출력: "<last30_cost>|<pct>"  (pct 는 부호 포함 정수; 산출 불가 시 빈 값 → 표시부에서 '-')
+    #   - last30  : 오늘 포함 최근 30일(period >= cut) 실제 합계 (표시용, 환산 안 함)
+    #   - pct     : 일평균(=30일 환산) 기준 직전 30일 대비 변동률
+    #
+    # ── 짧은 기록 보정 (핵심) ──────────────────────────────────────────────
+    # 기존 방식은 last30(30일치) 과 prev30(직전 구간의 "단순 합") 을 직접 비교했다.
+    # 기록 시작이 60일보다 가까우면 직전 구간(예: 5일치)의 합이 30일치보다 훨씬 작아
+    # 분모가 과소 → 변동률이 비정상적으로 커진다(예: +1817%).
+    # → 해결: 양쪽을 "일평균"으로 환산해 비교한다. 일평균 = 합계 / 그 구간의 실제 기록일수.
+    #   (일평균 × 30 으로 30일 기준 환산해도 비율은 동일하므로 일평균끼리 비교한다.)
+    #   이로써 직전 구간이 5일치여도 30일 단위의 비율로 환산되어 공정하게 비교된다.
+    # ── -% 표시 조건 ───────────────────────────────────────────────────────
+    # 전체 데이터 기간(가장 오래된 기록일~오늘)이 31일 이하이면 비교할 직전 구간이
+    # 사실상 없으므로 pct 를 빈 값으로 둔다(표시부에서 '-%').
+    local since cut json last30 last_days prev_sum prev_days pct
+    local min_period today_epoch min_epoch span_days
     since=$(date -v-59d '+%Y%m%d' 2>/dev/null) || since=$(date -d '59 days ago' '+%Y%m%d' 2>/dev/null)
     cut=$(date -v-29d '+%Y-%m-%d' 2>/dev/null) || cut=$(date -d '29 days ago' '+%Y-%m-%d' 2>/dev/null)
     [[ -z "$since" || -z "$cut" ]] && { echo "0|"; return; }
     json=$($CCUSAGE_CMD daily --json --since "$since" 2>/dev/null) || { echo "0|"; return; }
-    last30=$(echo "$json" | jq -r --arg c "$cut" '[(.daily // [])[] | select(.period >= $c) | (.totalCost // 0)] | add // 0' 2>/dev/null || echo "0")
-    prev30=$(echo "$json" | jq -r --arg c "$cut" '[(.daily // [])[] | select(.period <  $c) | (.totalCost // 0)] | add // 0' 2>/dev/null || echo "0")
-    pct=$(awk -v a="$last30" -v b="$prev30" 'BEGIN{ if (b+0>0) printf "%+.0f", (a-b)/b*100 }')
+    # 최근 30일(period >= cut): 합계 + 기록일수
+    last30=$(echo "$json"   | jq -r --arg c "$cut" '[(.daily // [])[] | select(.period >= $c) | (.totalCost // 0)] | add // 0' 2>/dev/null || echo "0")
+    last_days=$(echo "$json" | jq -r --arg c "$cut" '[(.daily // [])[] | select(.period >= $c)] | length' 2>/dev/null || echo "0")
+    # 직전 30일(period < cut): 합계 + 기록일수
+    prev_sum=$(echo "$json"  | jq -r --arg c "$cut" '[(.daily // [])[] | select(.period <  $c) | (.totalCost // 0)] | add // 0' 2>/dev/null || echo "0")
+    prev_days=$(echo "$json" | jq -r --arg c "$cut" '[(.daily // [])[] | select(.period <  $c)] | length' 2>/dev/null || echo "0")
+    # 전체 데이터 기간(일): 가장 오래된 기록일 ~ 오늘 (포함)
+    min_period=$(echo "$json" | jq -r '[(.daily // [])[].period] | min // empty' 2>/dev/null)
+    span_days=0
+    if [[ -n "$min_period" ]]; then
+        today_epoch=$(date '+%s')
+        min_epoch=$(date -j -f '%Y-%m-%d' "$min_period" '+%s' 2>/dev/null) || min_epoch=$(date -d "$min_period" '+%s' 2>/dev/null)
+        [[ -n "$min_epoch" ]] && span_days=$(( (today_epoch - min_epoch) / 86400 + 1 ))
+    fi
+    # 변동률: 일평균(=30일 환산) 기준. 총 기간 31일 이하 또는 한쪽 구간 공란이면 산출 불가(빈 값).
+    pct=$(awk -v ls="$last30" -v ld="$last_days" -v ps="$prev_sum" -v pd="$prev_days" -v sp="$span_days" 'BEGIN{
+        if (sp+0 <= 31) exit;            # 총 데이터 31일 이하 → 비교 불가 → -% 표시
+        if (ld+0 <= 0 || pd+0 <= 0) exit;
+        la = ls/ld; pa = ps/pd;          # 각 구간 일평균(= 30일 환산값을 30으로 나눈 것)
+        if (pa <= 0) exit;
+        printf "%+.0f", (la-pa)/pa*100;
+    }')
     echo "${last30}|${pct}"
 }
 
@@ -430,8 +460,12 @@ cmd_stop() {
     roll=$(get_rolling_30d)
     last30=${roll%%|*}
     chg=${roll#*|}
-    chg_str=""
-    [[ -n "$chg" ]] && chg_str=" (${chg} %)"
+    # 변동률 산출 불가(총 데이터 31일 이하 등)면 '-%' 로 표시
+    if [[ -n "$chg" ]]; then
+        chg_str=" (${chg} %)"
+    else
+        chg_str=" (-%)"
+    fi
 
     # 세션 시작 디렉토리명 (맨 앞 "[디렉토리]" 접두). 훅/폴백이 기록한 .session_dir
     # 우선, 없으면 현재 PWD basename.
@@ -467,7 +501,8 @@ cmd_stop() {
 
     # 한 줄 요약 출력: [디렉토리·PID4:M-T] ✅ 작업 | ⏱️ 소요 | 월누적 $X (±N %)
     # 디렉토리·PID4 = 같은 디렉토리 다중 인스턴스 구분, M=주제 순번, T=그 주제의
-    # 대화 순번, ⏱️=이번(M-T) 대화 소요시간. 월누적=과거 30일 합계, (±N %)=직전 30일 대비.
+    # 대화 순번, ⏱️=이번(M-T) 대화 소요시간. 월누적=최근 30일 합계,
+    # (±N %)=직전 30일 대비 변동률(일평균=30일 환산 기준). 총 데이터 31일 이하면 (-%).
     printf "[%s·%s:%s] ✅ %s | ⏱️ %s | 월누적 \$%.1f%s\n" \
         "$session_dir" "$inst_disc" "$mission_tag" "$task_name" "$duration_str" "$last30" "$chg_str"
     echo ""
