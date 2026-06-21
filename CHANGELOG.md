@@ -4,6 +4,18 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며,
 버전은 [유의적 버전(SemVer)](https://semver.org/lang/ko/) `major.minor.patch` 규칙을 사용합니다(1.0.0 이전 단계).
 
+## [0.2.0] - 2026-06-21
+
+### Added
+- **`/session-log` 슬래시 커맨드 추가.** 이번 세션 작업을 일자·시간별로 정리한
+  개발기록 마크다운을 생성한다(작업 디렉토리·요약을 맨 앞에). 알림·비용추적 훅과
+  독립적으로 동작하는 선택 기능.
+  - 출력 위치는 환경변수 `HERALD_LOG_DIR`(기본 `~/Desktop/`)로 설정 가능.
+  - `install.sh` 가 `commands/` → `~/.claude/commands/` 로 복사(설치 5→6단계),
+    `uninstall.sh` 가 `session-log.md` 제거.
+  - 공개 배포를 위해 개인용 노트 분류 엔진 의존(센티넬·사적 명명 규정)을 제거한
+    범용 버전으로 동봉.
+
 ## [0.1.3] - 2026-06-21
 
 ### Fixed

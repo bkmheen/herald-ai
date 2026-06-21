@@ -4,6 +4,7 @@ set -euo pipefail
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 SETTINGS="$CLAUDE_DIR/settings.json"
 SKILLS_DIR="$CLAUDE_DIR/skills"
+COMMANDS_DIR="$CLAUDE_DIR/commands"
 
 say()  { printf '%s\n' "$*"; }
 
@@ -23,6 +24,12 @@ for ev in list(hooks):
 json.dump(cfg, open(p,'w'), ensure_ascii=False, indent=2)
 print("  ✅ settings.json 에서 herald 훅 제거")
 PY
+fi
+
+# /session-log 커맨드 제거
+if [ -f "$COMMANDS_DIR/session-log.md" ]; then
+    rm -f "$COMMANDS_DIR/session-log.md"
+    say "  ✅ /session-log 커맨드 제거"
 fi
 
 say ""
