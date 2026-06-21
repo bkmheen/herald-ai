@@ -5,6 +5,54 @@
 
 ---
 
+## 2026-06-21 — Ubuntu `stop` 연쇄 실패 수정 (v0.1.3)
+
+### 배경
+"응답 종료 시 텔레그램 전송 기능" 정상 설치 여부를 확인하던 중, 검증 절차로 돌린
+`task-tracker.sh stop` 이 Ubuntu(Linux 5.15)에서 **exit 3** 으로 실패하는 것을 발견.
+텔레그램 알림(`notify.sh`) 경로는 정상이며, 본 결함은 `task-tracker.sh` 의 `stop`
+(작업 요약 기록)에 국한된다.
+
+### 문제 (macOS 전제 코드 × `set -euo pipefail`)
+`cmd_stop` 의 IP 라벨 탐지 블록이 macOS 전용 명령으로 시작하는데, 그 뒤에 Linux 폴백
+(`hostname -I`)이 있어도 앞단이 죽어 도달하지 못했다. 한 결함을 고치면 다음이 드러나는
+**3단계 연쇄 실패**였다(각각 `bash -x` 로 확인):
+1. `route -n get default` — Linux net-tools `route` 는 usage 에러 → **exit 3**,
+   `pipefail`+`set -e` 로 stop 전체 중단.
+2. `local ip_addr` 미초기화 — Linux 는 `def_if` 가 비어 `ip_addr` 가 한 번도 대입되지
+   않음 → `[[ -z "$ip_addr" ]]` 에서 **`set -u` unbound variable (exit 1)**.
+3. `ipconfig getifaddr en0/en1` — Linux 에 없는 명령 → **command not found (exit 127)**.
+   (`2>/dev/null` 은 메시지만 숨기고 종료 코드는 전파)
+   → macOS 에서는 `def_if`/`ipconfig` 가 채워져 1·2·3 모두 가려져 있었다.
+
+### 해결
+- 한 줄씩 `|| true` 를 흩뿌리지 않고, 동일 뿌리(플랫폼 전용 명령 × set -e)이므로
+  **IP 탐지 블록 동안만** `set +e +o pipefail` 후 `set -e -o pipefail` 로 복원.
+- `local ip_addr="" def_if="" ip_oct=""` 로 초기화하여 `set -u` 차단.
+- `instance-resolve.sh` 의 동일 `route` 라인은 `source` 되는 파일 특성상 set 옵션을
+  건드리지 않고 `|| true` 방어 가드만 추가(현재 호출 경로는 미발현, 잠재 위험 대비).
+
+### 검증
+| 항목 | 결과 |
+|------|------|
+| `stop` 종료 코드 | exit 3 → **exit 0** |
+| 한 줄 요약 출력 | `[herald-ai@201·…] ✅ … | ⏱️ … | 월누적 $… (-%)` 정상 |
+| IP 라벨 | `hostname -I` 폴백으로 `@201` 정상(텔레그램 라벨과 일치) |
+| `bash -n` | 통과 |
+
+### 원칙
+- `set -euo pipefail` + 플랫폼 종속 명령은 위험 조합. 폴백 체인을 둬도 앞단이 죽으면
+  도달 못 함 → 명시적 가드(`|| true`)나 국소 옵션 해제(`set +e`)로 감싼다.
+- `set -u` 환경의 `local` 변수는 반드시 초기값과 함께 선언.
+
+### 영향 파일
+- `skills/task-tracker/scripts/task-tracker.sh`,
+  `skills/task-tracker/scripts/instance-resolve.sh`, `VERSION`, `CHANGELOG.md`,
+  `README.md`(버전 표기).
+- 로컬 스킬(`~/.claude/skills/task-tracker`)과 배포본 `cp` 동기화, `diff` 무차이 확인.
+
+---
+
 ## 2026-06-20 — 설치 설명서 확장 및 함수 주석 보강 (v0.1.2)
 
 ### 작업

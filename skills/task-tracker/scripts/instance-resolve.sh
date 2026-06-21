@@ -93,7 +93,9 @@ if [[ -z "$INSTANCE_LABEL" ]]; then
         # 호스트명은 길어질 수 있어, 로컬 IP 의 마지막 숫자(최대 3자리)만 붙여 짧게 구분한다.
         # 여러 머신에서 같은 디렉토리명을 써도 알림이 섞이지 않는다. (예: MarvisHome@221)
         _tt_ip=""
-        _tt_defif=$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}')
+        # `|| true`: route -n get default 는 macOS 전용. Linux 에서는 exit 3 을 내므로
+        # pipefail 을 켠 caller 가 source 했을 때 중단되지 않도록 가드. 아래 hostname -I 폴백이 Linux 커버.
+        _tt_defif=$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}') || true
         [[ -n "$_tt_defif" ]] && _tt_ip=$(ipconfig getifaddr "$_tt_defif" 2>/dev/null)
         [[ -z "$_tt_ip" ]] && _tt_ip=$(ipconfig getifaddr en0 2>/dev/null)
         [[ -z "$_tt_ip" ]] && _tt_ip=$(ipconfig getifaddr en1 2>/dev/null)

@@ -164,7 +164,7 @@ bash uninstall.sh   # settings.json 의 herald 훅만 제거(스킬 보존)
 - **[DEVLOG.md](DEVLOG.md)** — 변경 배경·의사결정 상세(개발자용).
 - **[VERSION](VERSION)** — 현재 버전 단일 출처.
 
-현재 버전: **0.1.2**
+현재 버전: **0.1.3**
 
 ## 📄 라이선스
 

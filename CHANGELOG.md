@@ -4,6 +4,20 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며,
 버전은 [유의적 버전(SemVer)](https://semver.org/lang/ko/) `major.minor.patch` 규칙을 사용합니다(1.0.0 이전 단계).
 
+## [0.1.3] - 2026-06-21
+
+### Fixed
+- **Ubuntu(Linux)에서 `task-tracker.sh stop` 이 통째로 실패하던 문제 수정.**
+  `cmd_stop` 의 IP 라벨 탐지 블록이 macOS 전용 명령으로 시작해, `set -euo pipefail`
+  환경의 Linux 에서 3단계로 연쇄 실패했다:
+  - `route -n get default` → Linux net-tools 는 usage 에러로 **exit 3** → `set -e` 로 중단.
+  - `local ip_addr` 미초기화 → Linux 에서 `def_if` 가 비면 **`set -u` unbound variable**.
+  - `ipconfig getifaddr en0/en1` → Linux 에 없는 명령 **exit 127** → 중단.
+  이제 IP 탐지 블록 동안만 `set +e +o pipefail` 후 복원하고, 변수를 빈 값으로 초기화해
+  `hostname -I` 폴백으로 Linux 를 정상 커버한다. (`cmd_stop`)
+- `instance-resolve.sh` 의 동일 `route` 패턴에 방어적 `|| true` 가드 추가
+  (pipefail 을 켠 caller 가 source 할 경우 대비).
+
 ## [0.1.2] - 2026-06-20
 
 ### Documentation
@@ -33,6 +47,7 @@
   Telegram·데스크톱 멀티채널, 타입 분화(완료/진행/대기/오류), 다중 인스턴스 라벨,
   토큰 외부화(`telegram.conf`).
 
+[0.1.3]: https://github.com/bkmheen/herald-ai/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/bkmheen/herald-ai/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/bkmheen/herald-ai/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/bkmheen/herald-ai/releases/tag/v0.1.0
