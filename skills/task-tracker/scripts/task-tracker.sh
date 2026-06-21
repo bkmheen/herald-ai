@@ -482,13 +482,21 @@ cmd_stop() {
 
     # IP 마지막 옥텟 접미 (다양한 시스템 구분용): "<디렉토리명>@<옥텟>"
     # 텔레그램 라벨(instance-resolve.sh)과 동일 규칙으로 채팅 한 줄 요약도 맞춘다.
-    local ip_addr def_if ip_oct
+    # 초기값 "": set -u(nounset) 환경에서, Linux 처럼 ip_addr 가 한 번도 대입되지 않을 때
+    # 아래 [[ -z "$ip_addr" ]] 가 unbound variable 로 죽는 것을 막는다.
+    local ip_addr="" def_if="" ip_oct=""
+    # route/ipconfig 는 macOS 전용 명령이다. Linux 에는 없어 exit 3(route)·127(ipconfig)
+    # 을 내며, 스크립트 전역의 set -euo pipefail 때문에 stop 이 통째로 중단된다.
+    # IP 라벨은 부가 정보(없어도 무방)이므로, 탐지 블록 동안만 errexit/pipefail 을 끄고
+    # 폴백(hostname -I / ifconfig)으로 Linux 를 커버한 뒤 원래대로 복원한다.
+    set +e +o pipefail
     def_if=$(route -n get default 2>/dev/null | awk '/interface:/{print $2; exit}')
     [[ -n "$def_if" ]] && ip_addr=$(ipconfig getifaddr "$def_if" 2>/dev/null)
     [[ -z "$ip_addr" ]] && ip_addr=$(ipconfig getifaddr en0 2>/dev/null)
     [[ -z "$ip_addr" ]] && ip_addr=$(ipconfig getifaddr en1 2>/dev/null)
     [[ -z "$ip_addr" ]] && ip_addr=$(hostname -I 2>/dev/null | awk '{print $1}')
     [[ -z "$ip_addr" ]] && ip_addr=$(ifconfig 2>/dev/null | awk '/inet /{print $2}' | grep -v '^127\.' | head -1)
+    set -e -o pipefail
     ip_oct=$(printf '%s' "${ip_addr##*.}" | tr -dc '0-9')
     [[ -n "$ip_oct" ]] && session_dir="${session_dir}@${ip_oct}"
 
