@@ -22,6 +22,7 @@ Claude 가 응답을 끝내거나 입력을 기다릴 때마다 **모델이 직�
 - **멀티 채널** — Telegram(주) + 데스크톱(macOS `osascript`/`terminal-notifier`, Linux `notify-send`).
 - **크로스플랫폼** — macOS·Linux(Ubuntu) 공용. 헤드리스 서버에서도 텔레그램만으로 동작.
 - **토큰 외부화** — 봇 토큰은 `telegram.conf`(git 제외)에만. repo 공개 안전.
+- **`/session-log` 커맨드** — 이번 세션 작업을 일자·시간별로 정리한 개발기록 MD를 생성(선택 기능).
 
 ## 📦 요구 사항
 
@@ -65,15 +66,16 @@ cd herald-ai
 bash install.sh
 ```
 
-설치 스크립트가 수행하는 5단계(모두 멱등):
+설치 스크립트가 수행하는 6단계(모두 멱등):
 
 | 단계 | 내용 |
 |------|------|
 | 1 | **의존성 점검** — 필수/권장 도구 확인 |
 | 2 | **스킬 복사** — `task-tracker`·`telegram-notify` → `~/.claude/skills/` (개인 파일 `telegram.conf`·`task_history.jsonl`·`config` 는 보존) |
-| 3 | **텔레그램 설정** — `telegram.conf` 가 없을 때만 example 에서 생성 |
-| 4 | **훅 병합** — `~/.claude/settings.json` 에 훅 추가(기존 설정 `*.bak.<epoch>` 로 백업, 우리 훅은 중복 제거 후 재삽입) |
-| 5 | **완료 안내** — 다음 단계·테스트 명령 출력 |
+| 3 | **커맨드 복사** — `/session-log` → `~/.claude/commands/` |
+| 4 | **텔레그램 설정** — `telegram.conf` 가 없을 때만 example 에서 생성 |
+| 5 | **훅 병합** — `~/.claude/settings.json` 에 훅 추가(기존 설정 `*.bak.<epoch>` 로 백업, 우리 훅은 중복 제거 후 재삽입) |
+| 6 | **완료 안내** — 다음 단계·테스트 명령 출력 |
 
 > `~/.claude` 가 아닌 다른 경로를 쓰려면 `CLAUDE_CONFIG_DIR=/경로 bash install.sh`.
 
@@ -146,6 +148,21 @@ EOF
 
 마커: `[done]`(✅ 자체완결) · 없음(🔄 진행) · `[waiting]`(⏸️ 입력대기) · `[error]`(❌ 오류).
 
+## 📝 `/session-log` 커맨드 (선택)
+
+이번 세션에서 한 작업을 **일자·시간별로 정리한 개발기록 마크다운**을 생성하는 슬래시 커맨드입니다.
+설치 시 `~/.claude/commands/session-log.md` 로 복사되며, Claude Code 에서 `/session-log` 로 호출합니다.
+
+- 문서 맨 앞에 **작업 디렉토리**·**요약(시간대별 개괄)** 을 배치하고, 이어서 작업 목록·세부 내용을 시간순으로 기록합니다.
+- git 저장소면 브랜치·세션 커밋(해시·시각)을 앵커로 보강합니다.
+- **출력 위치**: 기본 `~/Desktop/`. 환경변수 `HERALD_LOG_DIR` 로 변경 가능.
+
+```bash
+export HERALD_LOG_DIR="$HOME/dev-logs"   # (선택) 기본값 ~/Desktop 대체
+```
+
+알림·비용추적 훅과 독립적으로 동작하는 부가 기능이며, 쓰지 않으면 호출하지 않으면 됩니다.
+
 ## 🧹 제거
 
 ```bash
@@ -164,7 +181,7 @@ bash uninstall.sh   # settings.json 의 herald 훅만 제거(스킬 보존)
 - **[DEVLOG.md](DEVLOG.md)** — 변경 배경·의사결정 상세(개발자용).
 - **[VERSION](VERSION)** — 현재 버전 단일 출처.
 
-현재 버전: **0.2.13**
+현재 버전: **0.2.14**
 
 ## 📄 라이선스
 
