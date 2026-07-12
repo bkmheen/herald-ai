@@ -31,10 +31,20 @@ else warn "node 없음 — ccusage 토큰/비용 추적 비활성 (Node.js 설�
 # 2) 스킬 복사 -------------------------------------------------
 say "[2/6] 스킬 설치 → $SKILLS_DIR"
 mkdir -p "$SKILLS_DIR"
-# 런타임/개인 파일은 덮어쓰지 않도록 제외하고 복사
-rsync -a --exclude 'telegram.conf' --exclude 'task_history.jsonl' --exclude 'config' \
-      "$REPO_DIR/skills/task-tracker"   "$SKILLS_DIR/"
-rsync -a "$REPO_DIR/skills/telegram-notify" "$SKILLS_DIR/"
+# 런타임/개인 파일(telegram.conf·task_history.jsonl·config)은 보존한다.
+# rsync 없이 coreutils(cp) 만으로 rsync --exclude 와 동등하게: 복사 전 개인 파일을
+# 백업 → 트리 복사 → 백업 복원. 원래 없던 파일(=repo 샘플)은 지워 fresh install 오염 방지.
+mkdir -p "$TT_DIR"
+for _f in telegram.conf task_history.jsonl config; do
+    [ -f "$TT_DIR/$_f" ] && cp "$TT_DIR/$_f" "$TT_DIR/.$_f.keep"
+done
+cp -R "$REPO_DIR/skills/task-tracker/." "$TT_DIR/"
+for _f in telegram.conf task_history.jsonl config; do
+    if [ -f "$TT_DIR/.$_f.keep" ]; then mv -f "$TT_DIR/.$_f.keep" "$TT_DIR/$_f"   # 기존 개인 파일 복원
+    else rm -f "$TT_DIR/$_f"; fi                                                   # 원래 없던 repo 샘플 제거(rsync --exclude 동등)
+done
+mkdir -p "$SKILLS_DIR/telegram-notify"
+cp -R "$REPO_DIR/skills/telegram-notify/." "$SKILLS_DIR/telegram-notify/"
 chmod +x "$TT_DIR/scripts/"*.sh
 ok "task-tracker, telegram-notify 스킬 복사 완료"
 
@@ -48,8 +58,8 @@ fi
 say "[3/6] 슬래시 커맨드 설치 → $COMMANDS_DIR"
 if [ -d "$REPO_DIR/commands" ]; then
     mkdir -p "$COMMANDS_DIR"
-    rsync -a "$REPO_DIR/commands/" "$COMMANDS_DIR/"
-    ok "/session-log 커맨드 복사 완료"
+    cp -R "$REPO_DIR/commands/." "$COMMANDS_DIR/"
+    ok "/session-log · /session-save 커맨드 복사 완료"
 else
     warn "commands 디렉토리 없음 — 커맨드 건너뜀"
 fi
@@ -99,7 +109,8 @@ say "  2) (선택) 플랜 설정:  bash $TT_DIR/scripts/task-tracker.sh setup"
 say "  3) Claude Code 새 세션을 시작하면 훅이 활성화됩니다."
 say ""
 say "추가 기능:"
-say "  • /session-log — 이번 세션 작업기록 MD 생성 (기본 ~/Desktop, HERALD_LOG_DIR 로 변경)"
+say "  • /session-log  — 이번 세션 작업 차례를 화면에 표시 (필터 인자 지원, 파일 미생성)"
+say "  • /session-save — 세션 작업기록 MD 저장 (기본 ~/Desktop, HERALD_LOG_DIR 로 변경; /session-log 필터 인계)"
 say ""
 say "전송 테스트(실제 미전송):"
 say "  NOTIFY_DRY_RUN=1 bash $TT_DIR/scripts/notify.sh done"
