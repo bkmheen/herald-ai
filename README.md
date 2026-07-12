@@ -22,7 +22,7 @@ Claude 가 응답을 끝내거나 입력을 기다릴 때마다 **모델이 직�
 - **멀티 채널** — Telegram(주) + 데스크톱(macOS `osascript`/`terminal-notifier`, Linux `notify-send`).
 - **크로스플랫폼** — macOS·Linux(Ubuntu) 공용. 헤드리스 서버에서도 텔레그램만으로 동작.
 - **토큰 외부화** — 봇 토큰은 `telegram.conf`(git 제외)에만. repo 공개 안전.
-- **`/session-log` 커맨드** — 이번 세션 작업을 일자·시간별로 정리한 개발기록 MD를 생성(선택 기능).
+- **`/session-log`·`/session-save` 커맨드** — 세션 작업을 일자·시간별 차례로 미리 보고(`/session-log`) 개발기록 MD로 저장(`/session-save`). 카테고리 필터 지원(선택 기능).
 
 ## 📦 요구 사항
 
@@ -72,7 +72,7 @@ bash install.sh
 |------|------|
 | 1 | **의존성 점검** — 필수/권장 도구 확인 |
 | 2 | **스킬 복사** — `task-tracker`·`telegram-notify` → `~/.claude/skills/` (개인 파일 `telegram.conf`·`task_history.jsonl`·`config` 는 보존) |
-| 3 | **커맨드 복사** — `/session-log` → `~/.claude/commands/` |
+| 3 | **커맨드 복사** — `/session-log`·`/session-save` → `~/.claude/commands/` |
 | 4 | **텔레그램 설정** — `telegram.conf` 가 없을 때만 example 에서 생성 |
 | 5 | **훅 병합** — `~/.claude/settings.json` 에 훅 추가(기존 설정 `*.bak.<epoch>` 로 백업, 우리 훅은 중복 제거 후 재삽입) |
 | 6 | **완료 안내** — 다음 단계·테스트 명령 출력 |
@@ -148,20 +148,27 @@ EOF
 
 마커: `[done]`(✅ 자체완결) · 없음(🔄 진행) · `[waiting]`(⏸️ 입력대기) · `[error]`(❌ 오류).
 
-## 📝 `/session-log` 커맨드 (선택)
+## 📝 세션 작업기록 커맨드 (선택)
 
-이번 세션에서 한 작업을 **일자·시간별로 정리한 개발기록 마크다운**을 생성하는 슬래시 커맨드입니다.
-설치 시 `~/.claude/commands/session-log.md` 로 복사되며, Claude Code 에서 `/session-log` 로 호출합니다.
+이번 세션에서 한 작업을 **일자·시간별로 정리한 개발기록**으로 남기는 두 개의 슬래시 커맨드입니다.
+설치 시 `~/.claude/commands/session-log.md`·`session-save.md` 로 복사되며, Claude Code 에서 호출합니다.
+모든 디렉토리에서 동작하며, 알림·비용추적 훅과 독립적으로 동작하는 부가 기능입니다.
 
-- 문서 맨 앞에 **작업 디렉토리**·**요약(시간대별 개괄)** 을 배치하고, 이어서 작업 목록·세부 내용을 시간순으로 기록합니다.
-- git 저장소면 브랜치·세션 커밋(해시·시각)을 앵커로 보강합니다.
-- **출력 위치**: 기본 `~/Desktop/`. 환경변수 `HERALD_LOG_DIR` 로 변경 가능.
+| 커맨드 | 역할 |
+|--------|------|
+| **`/session-log [필터]`** | 세션 작업을 **일자·시간별 차례로 화면에 표시**(파일 미생성). 필터 인자로 특정 작업만 추릴 수 있고, 추린 범위를 상태 파일로 남겨 `/session-save` 가 그대로 이어받습니다. |
+| **`/session-save [필터]`** | 세션 작업기록 **마크다운 파일을 생성·저장**. 인자가 없으면 직전 `/session-log` 의 필터 범위를 인계받고, 인자를 주면 그 조건으로 다시 추립니다. |
+
+- **필터**: 자연어 조건을 표준 카테고리(`개발`·`버그`·`테스트`·`문서`·`리서치`·`git`·`설정`·`기타`)의 포함/제외로 환산해 적용합니다. 예: `/session-log 테스트를 제외한 개발 관련 업무`.
+- **워크플로**: 먼저 `/session-log` 로 차례를 미리 보고 → 만족하면 `/session-save` 로 같은 범위를 저장하는 흐름을 권장합니다. (`/session-save` 만 단독 호출해도 됩니다.)
+- 문서 맨 앞에 **작업 디렉토리**·**요약(시간대별 개괄)** 을 배치하고, 이어서 작업 목록·세부 내용을 시간순으로 기록합니다. git 저장소면 브랜치·세션 커밋(해시·시각)을 앵커로 보강합니다.
+- **출력 위치**(`/session-save`): 기본 `~/Desktop/`. 환경변수 `HERALD_LOG_DIR` 로 변경 가능.
 
 ```bash
 export HERALD_LOG_DIR="$HOME/dev-logs"   # (선택) 기본값 ~/Desktop 대체
 ```
 
-알림·비용추적 훅과 독립적으로 동작하는 부가 기능이며, 쓰지 않으면 호출하지 않으면 됩니다.
+두 커맨드는 herald-ai 의 `task-tracker` 스킬에만 의존하며(상태 파일 인계에 `instance-resolve.sh` 사용), 쓰지 않으면 호출하지 않으면 됩니다.
 
 ## 🧹 제거
 

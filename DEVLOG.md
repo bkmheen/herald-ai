@@ -5,6 +5,55 @@
 
 ---
 
+## 2026-07-12 — `/session-log`·`/session-save` 2-커맨드 분리 이식 (v0.3.0)
+
+### 배경
+개인 환경의 `/session-log` 이 v0.2.0 동봉 이후 진화해 **미리보기(`/session-log`)와
+파일저장(`/session-save`) 두 커맨드로 분리**됐다. `/session-log` 은 화면에 차례만
+표시하고 필터 결과를 상태 파일로 남기며, `/session-save` 가 그 범위를 인계받아
+저장한다. 공개 패키지에는 여전히 구버전 단일 커맨드(저장형)만 있어, 다른 머신·
+디렉토리에서도 현재 워크플로를 쓰도록 이식하기로 결정.
+
+### 적절성 판단
+개인용 `/session-save` 원본은 사적 노트 분류 엔진에 다시 결합돼 있었다:
+- `<!-- NOTE_KIND: session-log -->` 센티넬 → 사적 분류 엔진 귀속.
+- "Atelier 제목 표준"·"alfred-note-compiler·Atelier_OMC 규정" 등 사적 명명 규정 참조.
+- 출력 경로 `~/Desktop/` 하드코딩.
+
+→ 메모리 지침(session-log 공개/개인 구분)에 따라 공개본은 **탈개인화 범용**을
+유지해야 한다. 그래서 센티넬·사적 명명 규정을 제거하고 출력 위치를
+`HERALD_LOG_DIR`(기본 `~/Desktop`)로 일반화한 버전으로 동봉.
+
+### 조치
+- `commands/session-log.md`: 구버전 저장형 → **미리보기+상태 인계**형으로 교체.
+  카테고리 필터·상태 파일(cwd 해시 키, `instance-resolve.sh`) 도입. 저장 로직 제거.
+- `commands/session-save.md` 신규: 저장 역할 이관. 센티넬·사적 명명 규정 제거,
+  출력 위치 `HERALD_LOG_DIR` 일반화, `/session-log` 상태 파일 인계 우선순위 구현.
+- 두 커맨드 모두 herald-ai 의 `task-tracker` 스킬(`instance-resolve.sh`)에만 의존 —
+  개인 엔진 무의존.
+- `install.sh`/`uninstall.sh`: 안내·제거 로직을 두 커맨드로 반영(rsync 는 이미
+  `commands/` 전체 복사이므로 신규 파일 자동 포함, 제거는 루프로 둘 다 삭제).
+- README: 특징 목록·설치 단계표·전용 섹션을 2-커맨드 워크플로로 갱신.
+  VERSION/CHANGELOG 0.3.0 반영.
+- 원본 개인용 버전은 사용자 로컬 `~/.claude/commands/` 에 그대로 유지(공개본과 별개).
+
+### 우분투 설치 호환성 점검·보강
+"다른 시스템(우분투)에서 설치되냐"는 확인 요청에 따라 Ubuntu 20.04 실호스트
+(192.168.0.201)에서 읽기 전용으로 명령 가용성을 점검하고 두 지점을 보강했다.
+- **상태 파일 해시 폴백 크로스OS 보강**: 커맨드 내 cwd 해시 체인이
+  `shasum → md5 → default` 로, `md5` 는 macOS 전용이라 shasum 없는 최소 Linux 에서
+  폴백이 무의미했다. `sha256sum`·`md5sum`(Linux coreutils)을 사이에 끼워
+  `shasum → sha256sum → md5sum → md5 → default` 로 확장(실호스트에서 12자리
+  해시 산출 검증).
+- **`install.sh` rsync → cp 전환**: 복사에 `rsync` 를 쓰는데 의존성 점검·README apt
+  줄에 없어, rsync 미포함 최소 서버 이미지에서 설치가 복사 단계에서 실패할 수
+  있었다. coreutils `cp` 로 바꿔 의존성 자체를 제거. `rsync --exclude`(개인 파일
+  보존) 는 "복사 전 개인 파일 백업 → 트리 복사 → 복원, 원래 없던 repo 샘플은 삭제"
+  로 동등 재현. 임시 CLAUDE_CONFIG_DIR 신규설치·멱등 재설치·개인 파일(task_history)
+  보존·telegram-notify 중첩 방지를 로컬에서 검증.
+
+---
+
 ## 2026-06-21 — `/session-log` 커맨드 동봉 (v0.2.0)
 
 ### 배경
