@@ -26,11 +26,13 @@ print("  ✅ settings.json 에서 herald 훅 제거")
 PY
 fi
 
-# /session-log 커맨드 제거
-if [ -f "$COMMANDS_DIR/session-log.md" ]; then
-    rm -f "$COMMANDS_DIR/session-log.md"
-    say "  ✅ /session-log 커맨드 제거"
-fi
+# /session-log · /session-save 커맨드 제거
+for _cmd in session-log session-save; do
+    if [ -f "$COMMANDS_DIR/$_cmd.md" ]; then
+        rm -f "$COMMANDS_DIR/$_cmd.md"
+        say "  ✅ /$_cmd 커맨드 제거"
+    fi
+done
 
 say ""
 say "스킬 파일은 보존했습니다. 완전 삭제하려면:"
