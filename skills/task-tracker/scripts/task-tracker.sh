@@ -28,9 +28,98 @@ SESSION_START_FILE="${RUNTIME_DIR}/.session_start_epoch"
 SESSION_DIR_FILE="${RUNTIME_DIR}/.session_dir"
 MISSION_FILE="${RUNTIME_DIR}/.mission"   # "M T": M=미션(주제) 순번, T=그 미션 내 대화 순번
 
-CCUSAGE_CMD="npx --yes ccusage@latest"
+# ── ccusage 실행 환경 (여러 Mac 에서 동일하게 동작하도록 격리) ──────────
+# 배경: 과거 `sudo npm` 실행 등으로 사용자 공용 캐시(~/.npm/_cacache)가 root
+#       소유가 되면, 일반 사용자로 도는 훅/추적기의 npx 가 EACCES/EEXIST 로 실패해
+#       "토큰 조회 실패" 가 난다. 또 `ccusage@latest` 최초 실행은 수 분짜리 콜드
+#       다운로드라, 타임아웃이 없으면 start/stop 전체가 멈춘다.
+# 대응: (1) 격리된 사용자 소유 npm 캐시 사용 → 손상된 ~/.npm 과 무관.
+#       (2) 이식성 타임아웃(gtimeout/perl 폴백) → 지연돼도 추적기는 안 멈춤.
+#       (3) 버전 고정 가능(HERALD_CCUSAGE_VERSION) → Mac 간 재현성.
+CCUSAGE_VERSION="${HERALD_CCUSAGE_VERSION:-latest}"
+CCUSAGE_CMD="npx --yes ccusage@${CCUSAGE_VERSION}"
+NPM_CACHE_DIR="${HERALD_NPM_CACHE:-${SKILL_DIR}/.cache/npm}"
+CCUSAGE_TIMEOUT="${HERALD_CCUSAGE_TIMEOUT:-60}"                  # 런타임(start/stop) 조회 상한(초)
+CCUSAGE_SETUP_TIMEOUT="${HERALD_CCUSAGE_SETUP_TIMEOUT:-180}"     # setup 최초 다운로드 상한(초)
+CCUSAGE_TTL="${HERALD_CCUSAGE_TTL:-300}"                         # 조회 결과 캐시 유효기간(초, 0=끔)
+CCUSAGE_RESULT_CACHE="${NPM_CACHE_DIR}/.result_cache"
 
 mkdir -p "$RUNTIME_DIR"
+
+# 이식성 있는 타임아웃 실행 — macOS 는 coreutils `timeout` 미탑재.
+# 우선순위: timeout → gtimeout(coreutils) → perl(macOS 기본 탑재) → 폴백(상한 없음).
+run_with_timeout() {
+    local secs="$1"; shift
+    if command -v timeout &>/dev/null; then
+        timeout "$secs" "$@"
+    elif command -v gtimeout &>/dev/null; then
+        gtimeout "$secs" "$@"
+    elif command -v perl &>/dev/null; then
+        perl -e '
+            my $s = shift;
+            my $pid = fork();
+            if (!defined $pid) { exec @ARGV or exit 127; }   # fork 실패 → 그냥 실행
+            if ($pid == 0) { exec @ARGV or exit 127; }
+            my $timed_out = 0;
+            local $SIG{ALRM} = sub { $timed_out = 1; kill "TERM", $pid; };
+            alarm $s;
+            waitpid($pid, 0);
+            my $code = $? >> 8;
+            alarm 0;
+            exit($timed_out ? 124 : $code);
+        ' "$secs" "$@"
+    else
+        "$@"
+    fi
+}
+
+# 파일 수정시각(epoch) — macOS(stat -f)·Linux(stat -c) 모두 대응.
+file_mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
+
+# ccusage 를 "격리 캐시 + 타임아웃 + 결과 TTL 캐시" 로 실행. 인자는 그대로 ccusage 로 전달.
+# 첫 인자가 정수면 그 값을 타임아웃(초)로 사용, 아니면 CCUSAGE_TIMEOUT 기본.
+#
+# 결과 TTL 캐시 이유: ccusage 는 매 호출마다 전체 트랜스크립트를 스캔하므로, 기록이
+#   많은 머신에서는 수십 초가 걸린다(네트워크가 아니라 스캔 자체가 느림). start→stop 과
+#   훅이 같은 인자로 반복 조회하므로, 짧은 TTL 로 캐시하면 두 번째부터는 즉시 응답한다.
+#   조회가 실패/타임아웃해도 만료된 캐시가 있으면 그거라도 반환한다(0 대신 마지막 값).
+run_ccusage() {
+    local t="$CCUSAGE_TIMEOUT"
+    if [[ "${1:-}" =~ ^[0-9]+$ ]]; then t="$1"; shift; fi
+    mkdir -p "$NPM_CACHE_DIR" 2>/dev/null
+
+    local key cache_file
+    key=$(printf '%s' "$*" | tr -c 'A-Za-z0-9' '_')
+    cache_file="${CCUSAGE_RESULT_CACHE}/${key}.json"
+
+    # 1) 신선한 캐시가 있으면 즉시 반환
+    if [[ "${CCUSAGE_TTL}" -gt 0 && -f "$cache_file" ]]; then
+        local now mtime
+        now=$(date '+%s'); mtime=$(file_mtime "$cache_file")
+        if [[ "$mtime" -gt 0 && $(( now - mtime )) -lt "$CCUSAGE_TTL" ]]; then
+            cat "$cache_file"; return 0
+        fi
+    fi
+
+    # 2) 실제 조회 (격리 npm 캐시 + 타임아웃)
+    local out
+    out=$(
+        export npm_config_cache="$NPM_CACHE_DIR"
+        run_with_timeout "$t" $CCUSAGE_CMD "$@"
+    )
+    if [[ -n "$out" ]]; then
+        mkdir -p "$CCUSAGE_RESULT_CACHE" 2>/dev/null
+        printf '%s' "$out" > "$cache_file" 2>/dev/null || true
+        printf '%s' "$out"
+        return 0
+    fi
+
+    # 3) 실패/타임아웃 → 만료됐어도 마지막 성공 캐시가 있으면 그거라도 반환
+    if [[ -f "$cache_file" ]]; then
+        cat "$cache_file"; return 0
+    fi
+    return 1
+}
 
 # ── 유틸리티 ──────────────────────────────────────────
 get_timestamp() { date '+%Y-%m-%d %H:%M:%S'; }
@@ -59,12 +148,15 @@ get_plan_name() {
 
 # 오늘(당일) 자 ccusage 사용량 JSON 반환 (실패 시 error JSON + 비정상 종료코드)
 get_token_usage() {
-    local today
+    local today out
     today=$(date '+%Y%m%d')
-    $CCUSAGE_CMD daily --json --since "$today" 2>/dev/null || {
-        echo '{"error": "ccusage 실행 실패"}'
-        return 1
-    }
+    out=$(run_ccusage daily --json --since "$today" 2>/dev/null)
+    if [[ -n "$out" ]]; then
+        printf '%s\n' "$out"
+        return 0
+    fi
+    echo '{"error": "ccusage 실행 실패"}'
+    return 1
 }
 
 # 이번 달(월초~오늘) 누적 비용($) 합계 반환
@@ -72,7 +164,7 @@ get_monthly_cost() {
     local month_start
     month_start=$(date '+%Y%m01')
     local json
-    json=$($CCUSAGE_CMD daily --json --since "$month_start" 2>/dev/null) || { echo "0"; return 1; }
+    json=$(run_ccusage daily --json --since "$month_start" 2>/dev/null); [[ -n "$json" ]] || { echo "0"; return 1; }
     echo "$json" | jq -r 'if .totals then .totals.totalCost // 0 else 0 end' 2>/dev/null || echo "0"
 }
 
@@ -85,7 +177,7 @@ get_projected_monthly_cost() {
     since=$(date -v-30d '+%Y%m%d' 2>/dev/null) || since=$(date -d '30 days ago' '+%Y%m%d' 2>/dev/null)
     [[ -z "$since" ]] && { echo "0"; return 1; }
     local json
-    json=$($CCUSAGE_CMD daily --json --since "$since" 2>/dev/null) || { echo "0"; return 1; }
+    json=$(run_ccusage daily --json --since "$since" 2>/dev/null); [[ -n "$json" ]] || { echo "0"; return 1; }
     local rolling_cost
     rolling_cost=$(echo "$json" | jq -r 'if .totals then .totals.totalCost // 0 else 0 end' 2>/dev/null || echo "0")
     # 일평균 = 31일 누적 / 31, 월예상 = 일평균 × 31
@@ -113,7 +205,7 @@ get_rolling_30d() {
     since=$(date -v-59d '+%Y%m%d' 2>/dev/null) || since=$(date -d '59 days ago' '+%Y%m%d' 2>/dev/null)
     cut=$(date -v-29d '+%Y-%m-%d' 2>/dev/null) || cut=$(date -d '29 days ago' '+%Y-%m-%d' 2>/dev/null)
     [[ -z "$since" || -z "$cut" ]] && { echo "0|"; return; }
-    json=$($CCUSAGE_CMD daily --json --since "$since" 2>/dev/null) || { echo "0|"; return; }
+    json=$(run_ccusage daily --json --since "$since" 2>/dev/null); [[ -n "$json" ]] || { echo "0|"; return; }
     # 최근 30일(period >= cut): 합계 + 기록일수
     last30=$(echo "$json"   | jq -r --arg c "$cut" '[(.daily // [])[] | select(.period >= $c) | (.totalCost // 0)] | add // 0' 2>/dev/null || echo "0")
     last_days=$(echo "$json" | jq -r --arg c "$cut" '[(.daily // [])[] | select(.period >= $c)] | length' 2>/dev/null || echo "0")
@@ -257,12 +349,13 @@ EOF
     echo "     설정 파일: ${CONFIG_FILE}"
     echo ""
 
-    echo "  🔍 ccusage 연결 테스트 중..."
-    if $CCUSAGE_CMD daily --json --since "$(date '+%Y%m%d')" &>/dev/null; then
-        echo "     ✅ ccusage 정상 동작"
+    echo "  🔍 ccusage 연결 테스트 중... (최초 실행은 다운로드로 최대 ${CCUSAGE_SETUP_TIMEOUT}초 소요)"
+    if [[ -n "$(run_ccusage "$CCUSAGE_SETUP_TIMEOUT" daily --json --since "$(date '+%Y%m%d')" 2>/dev/null)" ]]; then
+        echo "     ✅ ccusage 정상 동작 (격리 캐시: ${NPM_CACHE_DIR})"
     else
         echo "     ⚠️  ccusage 실행 실패"
-        echo "        'npx --yes ccusage@latest daily'를 수동으로 실행해 보세요"
+        echo "        수동 확인: npm_config_cache=\"${NPM_CACHE_DIR}\" ${CCUSAGE_CMD} daily"
+        echo "        (공용 ~/.npm 캐시가 root 소유로 깨진 경우여도, 위 격리 캐시로 우회됩니다)"
     fi
 
     echo ""

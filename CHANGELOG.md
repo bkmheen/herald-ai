@@ -4,6 +4,30 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며,
 버전은 [유의적 버전(SemVer)](https://semver.org/lang/ko/) `major.minor.patch` 규칙을 사용합니다(1.0.0 이전 단계).
 
+## [0.2.16] - 2026-07-13
+
+### Fixed
+- **토큰/비용 조회가 실패하던 문제 수정 (여러 Mac 공통).** `ccusage` 를 `npx` 로 실행할 때
+  사용자 공용 npm 캐시(`~/.npm`)를 쓰다가, 과거 `sudo npm` 등으로 캐시가 root 소유가 된
+  머신에서 `EACCES`/`EEXIST` 로 실패해 `📊 토큰 조회 실패` / `월누적 $0.0` 가 나오던 문제.
+  - **격리 npm 캐시**(`skills/task-tracker/.cache/npm`, `HERALD_NPM_CACHE` 로 변경 가능)를
+    사용해 손상된 `~/.npm` 과 무관하게 동작. **sudo 로 소유권을 고칠 필요 없음.**
+
+### Added
+- **이식성 타임아웃 래퍼.** macOS 는 coreutils `timeout` 이 없어, `gtimeout`→`perl`(기본 탑재)
+  순으로 폴백. 콜드 다운로드/네트워크 지연/대용량 스캔에도 추적기가 무한정 멈추지 않는다.
+  상한: 런타임 `HERALD_CCUSAGE_TIMEOUT`(기본 60초), setup 최초 다운로드 `HERALD_CCUSAGE_SETUP_TIMEOUT`(기본 180초).
+- **조회 결과 TTL 캐시.** `ccusage` 는 매번 전체 트랜스크립트를 스캔해 기록이 많은 머신에선
+  수십 초가 걸린다. 같은 인자의 결과를 `HERALD_CCUSAGE_TTL`(기본 300초) 동안 캐시해
+  `start→stop`·훅의 반복 조회를 즉시 응답하고, 조회 실패/타임아웃 시 마지막 캐시값을 반환한다.
+- **`CLAUDE.md` 추가.** 저장소 git 운영 규칙(버전·커밋·개발기록·푸시)의 단일 출처.
+  Claude Code 가 자동 로드하며 git 으로 배포돼 어느 Mac 에서든 동일하게 적용된다.
+- `setup` 의 ccusage 연결 테스트가 격리 캐시를 미리 채워(prime), 이후 첫 실행을 빠르게 한다.
+
+### Changed
+- `README.md`: 현재 버전 표기 `0.2.14 → 0.2.16` 정정(단일 출처 `VERSION` 과 불일치 해소),
+  `CLAUDE.md` 링크 추가, 조회 실패/느림 FAQ 항목 보강.
+
 ## [0.2.15] - 2026-07-12
 
 ### Added
