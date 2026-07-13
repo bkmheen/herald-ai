@@ -122,7 +122,8 @@ bash herald-ai/uninstall.sh
 |------|-------------|
 | 알림이 안 옴 | Claude Code **세션을 새로 시작**했는지 확인(훅은 새 세션부터 적용). `grep task-tracker ~/.claude/settings.json` 으로 병합 확인. |
 | 텔레그램만 안 옴 | `telegram.conf` 의 `TOKEN`/`CHAT_ID` 확인. `NOTIFY_DRY_RUN=1 ... notify.sh done` 으로 메시지 생성 여부 점검. |
-| `월누적` 비용이 `$0`/`(-%)` | `node`(`npx`) 미설치 시 `ccusage` 동작 안 함 → 비용·증감률 비활성. 데이터가 31일 미만이면 증감률은 정상적으로 `(-%)`. |
+| `월누적` 비용이 `$0`/`(-%)` | `node`(`npx`) 미설치 시 `ccusage` 동작 안 함 → 비용·증감률 비활성. 데이터가 31일 미만이면 증감률은 정상적으로 `(-%)`. 과거 `sudo npm` 으로 `~/.npm` 이 root 소유가 돼도 조회가 깨지지만, v0.4.0 부터는 **격리 npm 캐시**(`skills/task-tracker/.cache/npm`)로 우회하므로 sudo 없이 정상 동작합니다. |
+| 토큰/비용 조회가 느림 | `ccusage` 는 전체 트랜스크립트를 스캔하므로 기록이 많은 머신에선 수십 초가 걸립니다. v0.4.0 부터 결과를 `HERALD_CCUSAGE_TTL`(기본 300초) 동안 캐시해 두 번째 호출부터 즉시 응답하며, 조회가 타임아웃(`HERALD_CCUSAGE_TIMEOUT`, 기본 60초)돼도 마지막 캐시값을 씁니다. |
 | 여러 머신/세션 알림이 섞임 | 정상 — 라벨 `<디렉토리>@<IP끝옥텟>` 로 구분됩니다. 모든 상태는 인스턴스별 `/tmp/task-tracker/<id>/` 에 분리. |
 | 헤드리스 서버(GUI 없음) | 데스크톱 알림은 건너뛰고 텔레그램만 전송 — 정상 동작. |
 | 설치 후 settings 복구 | 설치 직전 백업이 `~/.claude/settings.json.bak.<epoch>` 에 있습니다. |
@@ -187,8 +188,9 @@ bash uninstall.sh   # settings.json 의 herald 훅만 제거(스킬 보존)
 - **[CHANGELOG.md](CHANGELOG.md)** — 버전별 변경 요약(사용자용, Keep a Changelog 표준).
 - **[DEVLOG.md](DEVLOG.md)** — 변경 배경·의사결정 상세(개발자용).
 - **[VERSION](VERSION)** — 현재 버전 단일 출처.
+- **[CLAUDE.md](CLAUDE.md)** — 저장소 작업 규칙(버전·커밋·개발기록·푸시) 단일 출처. Claude Code 가 자동 로드.
 
-현재 버전: **0.2.0**
+현재 버전: **0.4.0**
 
 ## 📄 라이선스
 

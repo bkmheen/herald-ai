@@ -5,6 +5,46 @@
 
 ---
 
+## 2026-07-13 — ccusage 토큰/비용 조회 견고화 + git 규칙 문서화 (v0.4.0)
+
+### 배경 (증상)
+`task-tracker.sh start` 가 `⚠️ 토큰 조회 실패`, `stop` 의 한 줄 요약이 `월누적 $0.0 (-%)`
+로 나왔다. 텔레그램 연결은 정상(별도 확인)인데 토큰/비용만 비었다.
+
+### 원인 규명
+1. **root 소유 npm 캐시** — `npx --yes ccusage@latest daily …` 를 직접 실행하니
+   `npm error EEXIST … EACCES: permission denied, mkdir '~/.npm/_cacache/…'`.
+   `find ~/.npm ! -user $(whoami)` → **509개 파일이 root 소유**. 과거 `sudo npm` 흔적으로
+   공용 캐시가 오염돼, 일반 사용자로 도는 훅/추적기의 `npx` 가 캐시를 못 써서 실패.
+2. **콜드 다운로드 + 타임아웃 부재** — 깨끗한 캐시로 돌려도 `ccusage` 최초 설치가 2분+.
+   `get_token_usage` 에 상한이 없어, 느리면 `start` 전체가 멈춘다(macOS 는 `timeout` 미탑재).
+3. **스캔 자체가 느림** — 캐시를 데운 뒤 `--offline` 으로 재실행해도 **33초**. 즉 npm 이
+   아니라 `ccusage` 가 전체 트랜스크립트(이 머신 누적 9,300만 토큰)를 매번 스캔하는 게 병목.
+
+### 해결 (여러 Mac 에서 동일 동작 목표)
+- **격리 npm 캐시**: `npm_config_cache=$SKILL_DIR/.cache/npm` (env `HERALD_NPM_CACHE`).
+  손상된 `~/.npm` 을 통째로 우회 → **sudo 로 소유권 복구 불필요**, 어느 Mac 이든 동일.
+- **이식성 타임아웃** `run_with_timeout`: `timeout`→`gtimeout`→`perl`(macOS 기본) 폴백.
+  perl 폴백은 alarm+`kill TERM` 후 timeout 시 exit 124. 상한 초과해도 추적기는 계속 진행.
+- **결과 TTL 캐시** `run_ccusage`: 인자별 캐시키(`$*` → 영숫자화)로 결과를 `HERALD_CCUSAGE_TTL`
+  (기본 300초) 동안 재사용. `start`(오늘) / `stop`·훅(월초·59일) 인자가 다르므로 키가 갈리며,
+  같은 인자 반복은 즉시 응답. 조회 실패/타임아웃 시 **만료된 캐시라도 반환**(0 대신 마지막값).
+  `file_mtime` 는 `stat -f %m`(BSD)·`stat -c %Y`(GNU) 양쪽 대응.
+- `setup` 연결 테스트가 격리 캐시를 prime 하고, 실패 시 격리 캐시 우회를 안내.
+
+### 검증
+- 1차 `start`(캐시 미스): 45초, `Input/Output/Total/Cost` 정상 출력.
+- 2차 `start`(같은 인자, 캐시 히트): **0초**, 동일 값.
+- `stop`: `월누적 $238.8` (기존 `$0.0` → 정상). 59일 인자는 첫 호출이라 스캔(캐시 미스) 후 캐시.
+- `bash -n` 문법 검사 통과. 편집한 repo 원본을 설치본(`~/.claude/...`)에 동기화.
+
+### 병행 결정 — git 규칙 단일 출처
+저장소·프로젝트 메모리 어디에도 명문화된 git 규칙이 없었다. 사용자가 규칙(버전 bump·커밋·
+개발기록·푸시)을 확정해, **다른 Mac 설치 시에도 동일 적용되도록 저장소에 커밋**해야 함을 근거로
+`CLAUDE.md`(Claude Code 자동 로드 + git 전파)를 단일 출처로 채택. 프로젝트 메모리는 머신 로컬
+경로라 전파되지 않으므로 규칙 본문을 두지 않고 포인터만 둔다. 이번 작업은 직전(v0.3.0,
+session-log)과 다른 주제 → 규칙에 따라 minor 증가(0.4.0).
+
 ## 2026-07-12 — `/session-log`·`/session-save` 2-커맨드 분리 이식 (v0.3.0)
 
 ### 배경
