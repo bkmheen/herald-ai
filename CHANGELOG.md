@@ -4,6 +4,22 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며,
 버전은 [유의적 버전(SemVer)](https://semver.org/lang/ko/) `major.minor.patch` 규칙을 사용합니다(1.0.0 이전 단계).
 
+## [0.4.1] - 2026-07-14
+
+### Fixed
+- **Windows/WSL 에서 `install.sh` 가 `: invalid option nameet: pipefail` 로 죽던 문제.**
+  Windows 에서 clone(`autocrlf`) 하거나 ZIP 로 받으면 셸 스크립트가 CRLF 로 변환돼,
+  bash 가 `set -euo pipefail\r` 을 잘못 해석해 실행 자체가 실패했다.
+
+### Added
+- **`.gitattributes` 추가.** `*.sh`·`*.json`·`*.md` 등을 `eol=lf` 로 강제해, 어느 OS 에서
+  clone 하든 셸 스크립트가 LF 로 유지된다(Windows CRLF 오염 근본 차단).
+- **`install.sh` CRLF 방어 로직.** 설치되는 `*.sh` 의 `\r` 을 `perl`(macOS·Linux 기본 탑재,
+  BSD/GNU `sed -i` 비호환 회피)로 제거한다. `.gitattributes` 가 적용되지 않는 **ZIP 다운로드**
+  경로에서도 런타임 훅이 깨지지 않는다.
+- **README Windows/WSL 안내.** herald-ai 는 bash 전용이므로 Windows 에선 **WSL 안에서**
+  Claude Code 를 실행해야 훅이 동작함을 명시. CRLF 증상·해결(WSL 홈 re-clone) FAQ 추가.
+
 ## [0.4.0] - 2026-07-13
 
 ### Fixed

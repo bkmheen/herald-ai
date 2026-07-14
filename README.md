@@ -56,6 +56,14 @@ brew install bc jq node      # python3·curl 은 기본 포함
 sudo apt update && sudo apt install -y python3 curl bc jq nodejs npm
 ```
 
+**Windows** — herald-ai 는 bash 훅으로 동작하므로 **WSL(Ubuntu) 안에서** 써야 합니다.
+PowerShell/CMD 네이티브로는 훅(`[ ... ] || bash ...` POSIX 문법)이 실행되지 않아 알림이 뜨지 않습니다.
+```powershell
+wsl --install        # 최초 1회 (재부팅 필요할 수 있음)
+```
+이후 **WSL 홈(`~`)** 에서 아래 "설치" 를 진행하고, `claude` 도 WSL 안에서 실행하세요.
+⚠️ `/mnt/c/...`(Windows 파일)에 clone 하면 CRLF 로 스크립트가 깨질 수 있으니 반드시 WSL 홈에 clone.
+
 미설치 항목은 자동으로 우회합니다 — `node` 없으면 비용 추적만, `curl` 없으면 python3 로 전송.
 
 ### 1) 설치
@@ -126,6 +134,8 @@ bash herald-ai/uninstall.sh
 | 토큰/비용 조회가 느림 | `ccusage` 는 전체 트랜스크립트를 스캔하므로 기록이 많은 머신에선 수십 초가 걸립니다. v0.4.0 부터 결과를 `HERALD_CCUSAGE_TTL`(기본 300초) 동안 캐시해 두 번째 호출부터 즉시 응답하며, 조회가 타임아웃(`HERALD_CCUSAGE_TIMEOUT`, 기본 60초)돼도 마지막 캐시값을 씁니다. |
 | 여러 머신/세션 알림이 섞임 | 정상 — 라벨 `<디렉토리>@<IP끝옥텟>` 로 구분됩니다. 모든 상태는 인스턴스별 `/tmp/task-tracker/<id>/` 에 분리. |
 | 헤드리스 서버(GUI 없음) | 데스크톱 알림은 건너뛰고 텔레그램만 전송 — 정상 동작. |
+| `install.sh` 가 `invalid option nameet: pipefail` 로 죽음 | Windows 에서 clone/ZIP 시 스크립트가 **CRLF** 로 변환된 것. **WSL 홈(`~`)에 새로 clone** 하면 해결(`/mnt/c` 말고). 이미 받은 경우: `find . -name '*.sh' -exec sed -i 's/\r$//' {} +` 후 재실행. v0.4.1 부터 `.gitattributes`·설치 방어 로직으로 근본 차단. |
+| Windows 에서 알림이 안 옴 | Claude Code 를 **WSL 안에서** 실행해야 훅이 동작. PowerShell/CMD 네이티브에서는 bash 훅 미실행. |
 | 설치 후 settings 복구 | 설치 직전 백업이 `~/.claude/settings.json.bak.<epoch>` 에 있습니다. |
 
 ## ⚙️ 동작 방식
@@ -190,7 +200,7 @@ bash uninstall.sh   # settings.json 의 herald 훅만 제거(스킬 보존)
 - **[VERSION](VERSION)** — 현재 버전 단일 출처.
 - **[CLAUDE.md](CLAUDE.md)** — 저장소 작업 규칙(버전·커밋·개발기록·푸시) 단일 출처. Claude Code 가 자동 로드.
 
-현재 버전: **0.4.0**
+현재 버전: **0.4.1**
 
 ## 📄 라이선스
 
