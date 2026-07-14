@@ -5,6 +5,33 @@
 
 ---
 
+## 2026-07-14 — Windows/WSL CRLF 로 install.sh 실패 수정 (v0.2.17)
+
+### 배경 (증상)
+Windows 사용자가 `bash install.sh` 실행 시 `: invalid option nameet: pipefail` 로 즉시 종료.
+1차로 PowerShell 에서 시도(→ `bash` 없음), WSL 로 전환 후에도 위 에러가 재현.
+
+### 원인 규명
+- 에러 문자열 `nameet: pipefail` 이 결정적 단서. `set -euo pipefail` 줄 끝에 `\r`(CR) 이 붙어
+  bash 가 `pipefail\r` 을 옵션명으로 오인. 즉 **파일이 CRLF 줄바꿈**.
+- 원인: Windows 의 Git(`core.autocrlf=true`) 또는 GitHub ZIP 다운로드가 LF→CRLF 로 변환.
+  `/mnt/c/...`(Windows 파일)를 WSL 이 그대로 읽으니 CR 이 남아 있었다.
+- 파급: install.sh 뿐 아니라 설치되는 `skills/.../*.sh`(런타임 훅) 도 CRLF 면 알림이 깨진다.
+
+### 해결 (3중 방어)
+1. **`.gitattributes`** — `*.sh` 등을 `eol=lf` 로 강제. 어느 OS 에서 clone 해도 LF 유지(근본 차단).
+   단, ZIP 다운로드에는 적용 안 됨 → 아래 2로 보완.
+2. **install.sh 방어 로직** — 설치되는 `*.sh` 의 `\r` 을 제거. `sed -i` 는 BSD(macOS)/GNU 문법이
+   달라, 양쪽 기본 탑재인 **`perl -i -pe 's/\r$//'`** 사용(이 저장소의 timeout 폴백과 동일 근거).
+   `command -v perl` 가드로 perl 없으면 조용히 건너뜀.
+3. **README/FAQ** — Windows 는 **WSL 안에서** Claude Code 실행 필수(PowerShell 네이티브는
+   POSIX 훅 미실행), `/mnt/c` 말고 **WSL 홈에 clone** 권장, CRLF 증상·수정법 명시.
+
+### 검증
+- `bash -n install.sh` 구문 정상. `printf 'set -euo pipefail\r\n...'` → `perl -i -pe` 후 CR 제거 확인.
+
+---
+
 ## 2026-07-13 — ccusage 토큰/비용 조회 견고화 + git 규칙 문서화 (v0.2.16)
 
 ### 배경 (증상)

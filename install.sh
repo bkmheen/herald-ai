@@ -45,6 +45,13 @@ for _f in telegram.conf task_history.jsonl config; do
 done
 mkdir -p "$SKILLS_DIR/telegram-notify"
 cp -R "$REPO_DIR/skills/telegram-notify/." "$SKILLS_DIR/telegram-notify/"
+# CRLF 방어: Windows 에서 clone/ZIP 다운로드하면 셸 스크립트가 CRLF 로 섞여
+# 런타임 훅이 깨진다("invalid option name" 등). 설치되는 .sh 의 \r 을 제거한다.
+# perl 은 macOS·Linux 기본 탑재(BSD/GNU sed -i 비호환 회피). 없으면 조용히 건너뜀.
+if command -v perl >/dev/null 2>&1; then
+    find "$TT_DIR" "$SKILLS_DIR/telegram-notify" -type f -name '*.sh' \
+        -exec perl -i -pe 's/\r$//' {} + 2>/dev/null || true
+fi
 chmod +x "$TT_DIR/scripts/"*.sh
 ok "task-tracker, telegram-notify 스킬 복사 완료"
 

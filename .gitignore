@@ -8,6 +8,9 @@ skills/task-tracker/task_history.jsonl
 skills/task-tracker/.cache/
 **/.cache/npm/
 
+# oh-my-claudecode 로컬 상태 (세션·메모리·state — 머신 로컬)
+.omc/
+
 # OS
 .DS_Store
 *.swp
