@@ -4,6 +4,20 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며,
 버전은 [유의적 버전(SemVer)](https://semver.org/lang/ko/) `major.minor.patch` 규칙을 사용합니다(1.0.0 이전 단계).
 
+## [0.2.21] - 2026-08-02
+
+### Changed
+- **앤솔로지 영역 부여 = 실측으로 「지원됨」 확인** (0.2.20 의 "엔진 미지원일 수 있다" 우려 해소).
+  노트볼트 에서 `AR_시스템-지출원장` 을 앤솔로지 2건에 부여한 결과, Atlas 에 전용 노드
+  (`Atlas/Areas/AR_시스템/AR_시스템-지출원장.md`)가 생성되고 상위 목록에 `note_count: 2` 로
+  정확히 집계됐다. `link-group render` 후에도 frontmatter 의 `areas` 는 보존된다.
+- **성립 조건 명시**: 앤솔로지 트리가 Atlas **콘텐츠 루트로 등록**돼 있어야 한다. 이 볼트는
+  0.73.0 에서 `Dossier/Archive/Anthologies` → `Dossier/Anthologies` 승격 +
+  `content_roots.atlas_source_roots` 등록으로 성립했다. 스캔 루트 밖인 볼트에서는 여전히
+  백링크로만 보일 수 있으므로 **다른 볼트에서는 확인 절차를 유지**한다.
+- `kb_areas.json` 에 `keywords: []` 로 등록하면 자동 배정 없이 **수동 귀속 전용**이 된다는 점을
+  SKILL.md 에 명시(선례 `AR_시스템-세션로그`).
+
 ## [0.2.20] - 2026-08-01
 
 ### Added
