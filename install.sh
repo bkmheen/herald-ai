@@ -45,6 +45,10 @@ for _f in telegram.conf task_history.jsonl config; do
 done
 mkdir -p "$SKILLS_DIR/telegram-notify"
 cp -R "$REPO_DIR/skills/telegram-notify/." "$SKILLS_DIR/telegram-notify/"
+# trip-ledger — 여행·출장 지출 원장 파이프라인(문서 전용, 런타임 상태 없음).
+# 개인 식별자(시트 ID·맵 목록)는 볼트 Registry 에 있고 여기엔 없으므로 통째로 덮어써도 안전.
+mkdir -p "$SKILLS_DIR/trip-ledger"
+cp -R "$REPO_DIR/skills/trip-ledger/." "$SKILLS_DIR/trip-ledger/"
 # CRLF 방어: Windows 에서 clone/ZIP 다운로드하면 셸 스크립트가 CRLF 로 섞여
 # 런타임 훅이 깨진다("invalid option name" 등). 설치되는 .sh 의 \r 을 제거한다.
 # perl 은 macOS·Linux 기본 탑재(BSD/GNU sed -i 비호환 회피). 없으면 조용히 건너뜀.
@@ -53,7 +57,7 @@ if command -v perl >/dev/null 2>&1; then
         -exec perl -i -pe 's/\r$//' {} + 2>/dev/null || true
 fi
 chmod +x "$TT_DIR/scripts/"*.sh
-ok "task-tracker, telegram-notify 스킬 복사 완료"
+ok "task-tracker, telegram-notify, trip-ledger 스킬 복사 완료"
 
 # 플랜 설정(config) — 없을 때만 example 에서 생성
 if [ ! -f "$TT_DIR/config" ] && [ -f "$REPO_DIR/skills/task-tracker/config.example" ]; then

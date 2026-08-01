@@ -23,6 +23,7 @@ Claude 가 응답을 끝내거나 입력을 기다릴 때마다 **모델이 직�
 - **크로스플랫폼** — macOS·Linux(Ubuntu) 공용. 헤드리스 서버에서도 텔레그램만으로 동작.
 - **토큰 외부화** — 봇 토큰은 `telegram.conf`(git 제외)에만. repo 공개 안전.
 - **`/session-log`·`/session-save` 커맨드** — 세션 작업을 일자·시간별 차례로 미리 보고(`/session-log`) 개발기록 MD로 저장(`/session-save`). 카테고리 필터 지원(선택 기능).
+- **`trip-ledger` 스킬** — 여행·출장 지출을 노트 → 구글시트 원장 → 구글맵 목록으로 잇는 파이프라인. **막혔던 길을 다시 가지 않도록** 검증된 경로와 재시도 금지 경로를 저장소에 축적해 여러 Mac 이 공유한다. → [자세히](#-trip-ledger--여행출장-지출-원장)
 
 ## 📦 요구 사항
 
@@ -79,7 +80,7 @@ bash install.sh
 | 단계 | 내용 |
 |------|------|
 | 1 | **의존성 점검** — 필수/권장 도구 확인 |
-| 2 | **스킬 복사** — `task-tracker`·`telegram-notify` → `~/.claude/skills/` (개인 파일 `telegram.conf`·`task_history.jsonl`·`config` 는 보존) |
+| 2 | **스킬 복사** — `task-tracker`·`telegram-notify`·`trip-ledger` → `~/.claude/skills/` (개인 파일 `telegram.conf`·`task_history.jsonl`·`config` 는 보존) |
 | 3 | **커맨드 복사** — `/session-log`·`/session-save` → `~/.claude/commands/` |
 | 4 | **텔레그램 설정** — `telegram.conf` 가 없을 때만 example 에서 생성 |
 | 5 | **훅 병합** — `~/.claude/settings.json` 에 훅 추가(기존 설정 `*.bak.<epoch>` 로 백업, 우리 훅은 중복 제거 후 재삽입) |
@@ -181,6 +182,50 @@ export HERALD_LOG_DIR="$HOME/dev-logs"   # (선택) 기본값 ~/Desktop 대체
 
 두 커맨드는 herald-ai 의 `task-tracker` 스킬에만 의존하며(상태 파일 인계에 `instance-resolve.sh` 사용), 쓰지 않으면 호출하지 않으면 됩니다.
 
+## 🧳 trip-ledger — 여행·출장 지출 원장
+
+여행·출장에서 나온 영수증·항공권·교통비를 **볼트 노트 → 구글시트 원장 → 구글맵 장소 목록**으로
+잇는 파이프라인 스킬입니다. 설치 시 `~/.claude/skills/trip-ledger/` 로 복사됩니다.
+
+핵심은 기능이 아니라 **경험의 공유**입니다. 브라우저로 구글시트·구글맵을 다루다 보면
+"이 방법은 안 된다" 를 알아내는 데 대부분의 시간이 듭니다. 그 지식이 한 머신의 한 세션에만
+남으면 다른 Mac 은 같은 벽을 처음부터 다시 만납니다. 그래서 **검증된 경로와 재시도 금지 경로를
+저장소에 축적**하고, `git pull && bash install.sh` 로 모든 Mac 이 같은 수준에서 시작합니다.
+
+| 파일 | 내용 |
+|------|------|
+| `SKILL.md` | 실행 맥 판정(0단계) + 6단계 파이프라인 |
+| `LESSONS.md` | ⛔재시도 금지 · ✅검증된 우회로. 각 항목에 **최종확인 날짜** |
+| `playbooks/` | `10-notes`(노트·앤솔로지) `20-sheets`(시트 표준) `30-maps`(지도 등록) `40-chrome`(브라우저 기법) |
+| `assets/` | 검증된 JS 스니펫, 시트 열·서식 스펙 |
+| `registry.example.yaml` | 레지스트리 스키마 |
+
+### LESSONS 항목 형식
+
+```markdown
+### L-004 · 구글맵 「저장」 대화상자가 렌더링되지 않음
+- 상태: ⛔ 회피        (최종확인 2026-08-01)
+- 증상: 대화상자 컨테이너가 visibility:hidden · 0×0. RPC 는 200 인데 UI 미생성
+- 실패한 시도: 좌표클릭 / ref클릭 / 재로드 후 클릭 / DOM 조작 (4회) → 재시도 금지
+- ✅ 대체경로: 구글 **검색** 지식패널의 「컬렉션에 저장」 → assets/maps-save-via-search-kp.js
+- 재확인 트리거: 구글맵 UI 개편 감지 시에만
+```
+
+`실패한 시도` 를 명시적으로 적는 것이 이 형식의 요점입니다 — 다음 세션이 그 경로를 건너뜁니다.
+`최종확인 날짜` 는 외부 UI 가 바뀌었을 때의 재검증 기준선입니다.
+
+### 개인 식별자는 저장소에 두지 않습니다
+
+herald-ai 는 공개 저장소이므로, 시트 ID·구글맵 컬렉션 ID 같은 값은 커밋하지 않습니다.
+실제 값은 개인 볼트의 레지스트리에 두고, 저장소에는 **스키마(`registry.example.yaml`)만** 둡니다.
+
+### 단방향 미러 환경 주의
+
+여러 Mac 이 **한 방향으로만** 동기화되는 볼트(원본 Mac → 사본 Mac)를 쓰는 경우,
+사본 쪽에서 볼트를 수정하면 다음 동기화 때 **조용히 사라집니다**(`rsync --delete`).
+`SKILL.md` 0단계가 실행 중인 Mac 이 원본인지 사본인지 먼저 판정하고,
+사본이면 수정 요청을 파일로 넘기는 인계 절차(§5)로 유도합니다.
+
 ## 🧹 제거
 
 ```bash
@@ -200,7 +245,7 @@ bash uninstall.sh   # settings.json 의 herald 훅만 제거(스킬 보존)
 - **[VERSION](VERSION)** — 현재 버전 단일 출처.
 - **[CLAUDE.md](CLAUDE.md)** — 저장소 작업 규칙(버전·커밋·개발기록·푸시) 단일 출처. Claude Code 가 자동 로드.
 
-현재 버전: **0.2.17**
+현재 버전: **0.2.18**
 
 ## 📄 라이선스
 

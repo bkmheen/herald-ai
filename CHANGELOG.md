@@ -4,6 +4,27 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며,
 버전은 [유의적 버전(SemVer)](https://semver.org/lang/ko/) `major.minor.patch` 규칙을 사용합니다(1.0.0 이전 단계).
 
+## [0.2.18] - 2026-08-01
+
+### Added
+- **`trip-ledger` 스킬 추가** — 여행·출장 지출을 볼트 노트 → 구글시트 원장 → 구글맵 목록으로
+  잇는 파이프라인. 목적은 기능 자체보다 **작업 경험을 여러 Mac 이 공유**하는 데 있다.
+  git 배포이므로 `git pull && bash install.sh` 만으로 다른 Mac 이 같은 노하우를 갖는다.
+  - `SKILL.md` — 0단계 **실행 맥 판정**(볼트 단방향 미러 가드) + 6단계 파이프라인
+  - `LESSONS.md` — ⛔재시도 금지 / ✅검증된 우회로 9건(L-001~L-009). 각 항목에 최종확인 날짜
+  - `playbooks/10-notes · 20-sheets · 30-maps · 40-chrome`
+  - `assets/maps-save-via-search-kp.js` — 구글맵 저장 대화상자 미렌더(L-004) 우회 스니펫(멱등)
+  - `assets/sheet-columns.md` — 시트 열·폭·서식 스펙(복사용)
+  - `registry.example.yaml` — 레지스트리 스키마. **실제 식별자는 공개 repo 에 두지 않는다**
+- **`install.sh` 가 `trip-ledger` 를 설치**한다(문서 전용, 런타임 상태 없어 덮어쓰기 안전).
+
+### Notes
+- 볼트(`노트볼트`)는 **서버 맥 → 타 맥 단방향 미러**(`rsync --delete`)다. 리모트 맥의
+  볼트 수정은 충돌이 아니라 **다음 미러 때 소실**된다. 이 판정과 인계 절차를 `SKILL.md` 에
+  0단계·§5 로 명문화했다 — 종전에는 머신 로컬 메모리에만 있어 타 Mac 에 전파되지 않았다.
+- 시트 ID·구글맵 컬렉션 ID 등 개인 식별자는 볼트 `Dossier/Registry/` 에 두고,
+  herald-ai(공개 저장소)에는 **스키마만** 둔다.
+
 ## [0.2.17] - 2026-07-14
 
 ### Fixed
