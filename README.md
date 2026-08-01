@@ -245,7 +245,7 @@ bash uninstall.sh   # settings.json 의 herald 훅만 제거(스킬 보존)
 - **[VERSION](VERSION)** — 현재 버전 단일 출처.
 - **[CLAUDE.md](CLAUDE.md)** — 저장소 작업 규칙(버전·커밋·개발기록·푸시) 단일 출처. Claude Code 가 자동 로드.
 
-현재 버전: **0.2.19**
+현재 버전: **0.2.20**
 
 ## 📄 라이선스
 

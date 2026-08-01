@@ -16,7 +16,8 @@ trip:
 
 vault:
   anthology_uid: UID_XXXXXXXXXX            # 앤솔로지(링크그룹) 노트 UID
-  anthology_path: Dossier/Anthologies/AN_개인/YYMM00 <여행명> 비용기록.md
+  anthology_path: Dossier/Anthologies/YYMM00 <여행명> 비용기록.md
+  area: AR_시스템-지출원장                  # 앤솔로지 frontmatter 의 areas 와 동일 (SKILL.md §1)
 
 sheets:
   workbook_id: <스프레드시트 ID>
