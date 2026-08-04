@@ -137,6 +137,7 @@ bash herald-ai/uninstall.sh
 | 헤드리스 서버(GUI 없음) | 데스크톱 알림은 건너뛰고 텔레그램만 전송 — 정상 동작. |
 | `install.sh` 가 `invalid option nameet: pipefail` 로 죽음 | Windows 에서 clone/ZIP 시 스크립트가 **CRLF** 로 변환된 것. **WSL 홈(`~`)에 새로 clone** 하면 해결(`/mnt/c` 말고). 이미 받은 경우: `find . -name '*.sh' -exec sed -i 's/\r$//' {} +` 후 재실행. v0.2.17 부터 `.gitattributes`·설치 방어 로직으로 근본 차단. |
 | Windows 에서 알림이 안 옴 | Claude Code 를 **WSL 안에서** 실행해야 훅이 동작. PowerShell/CMD 네이티브에서는 bash 훅 미실행. |
+| VM 안 Windows 에서 WSL 자체가 안 깔림 | `wsl --install` 이 `HCS_E_HYPERV_NOT_INSTALLED`, WSL1 폴백도 `WSL_E_WSL1_NOT_SUPPORTED`(구성요소 Enabled·재부팅 후에도) — **Parallels 등 VM 게스트**(작업 관리자에 "가상 컴퓨터: 예")는 중첩 가상화가 꺼져 있으면 막다른 골목. WSL 을 포기하고 **Claude Code 네이티브 설치**(`irm https://claude.ai/install.ps1 \| iex` → 사용자 PATH 에 `%USERPROFILE%\.local\bin` 추가 → `winget install Git.Git`)로 직행한다. 단 이 경우 herald-ai 훅은 미동작(bash 전용, 위 항목). 실측: VM게스트 Parallels Win11 VM, 2026-08-05. |
 | 설치 후 settings 복구 | 설치 직전 백업이 `~/.claude/settings.json.bak.<epoch>` 에 있습니다. |
 
 ## ⚙️ 동작 방식

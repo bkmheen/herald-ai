@@ -4,6 +4,17 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며,
 버전은 [유의적 버전(SemVer)](https://semver.org/lang/ko/) `major.minor.patch` 규칙을 사용합니다(1.0.0 이전 단계).
 
+## [0.2.22] - 2026-08-05
+
+### Added
+- **README FAQ: VM 게스트 Windows 에서 WSL 불가 시 우회로.** Parallels 등 VM 안 Windows(작업
+  관리자 "가상 컴퓨터: 예")는 중첩 가상화가 꺼져 있으면 `wsl --install` 이
+  `HCS_E_HYPERV_NOT_INSTALLED`, WSL1 폴백도 구성요소 Enabled·재부팅 후에도
+  `WSL_E_WSL1_NOT_SUPPORTED` 로 막힌다(스토어판 WSL 2.7.x + 빌드 26200 실측). 이때는 WSL 을
+  포기하고 **Claude Code 네이티브 설치**(`install.ps1` → 사용자 PATH 등록 → Git for Windows)로
+  직행하는 경로를 FAQ 에 기록 — 단 herald-ai 훅(bash 전용)은 네이티브에서 미동작.
+  실측: VM게스트 Parallels Win11 VM (2026-08-05).
+
 ## [0.2.21] - 2026-08-02
 
 ### Changed
