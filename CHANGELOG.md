@@ -4,6 +4,14 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며,
 버전은 [유의적 버전(SemVer)](https://semver.org/lang/ko/) `major.minor.patch` 규칙을 사용합니다(1.0.0 이전 단계).
 
+## [0.2.24] - 2026-08-16
+
+### Changed
+- **general-host 의 VPN 참여 사유를 기록.** general-host 은 내부 호스트이나 **내부시스템 가 VPN 을 거쳐 아마존 내부
+  MySQL 서버에 접속하는 기능** 때문에 L2TP 클라이언트로 붙어 있다. 이 경로는 herald-vault 와
+  무관하며, vault 전송은 사내망 직결(`사내 대역`)로 충분하다. VPN 구성 변경이 필요해지면
+  부분 수정이 아니라 전체를 한꺼번에 손보기로 한다. (`docs/vault/DECISIONS.md`·`HANDOVER.md`)
+
 ## [0.2.23] - 2026-08-16
 
 ### Added
