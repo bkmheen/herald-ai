@@ -4,6 +4,30 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며,
 버전은 [유의적 버전(SemVer)](https://semver.org/lang/ko/) `major.minor.patch` 규칙을 사용합니다(1.0.0 이전 단계).
 
+## [0.2.26] - 2026-08-16
+
+### Added
+- **herald-vault 전 경로 실증 완료 (07:37 KST).** general-host → 투입구 → inbox → 수집기 → vault
+  가 실제 데이터로 통과했다. 문서 54건(48,186B)·환경 1건(1,522B)이 전송되어 vault 에
+  커밋 2건으로 반영됐고, 원본은 `done/general-host/{docs,env}/` 에 보관됐다. `_inbox/general-host` 항목 73개.
+  수집기는 `.trigger` 로 즉시 기동해 **전송부터 push 까지 1초 내**에 끝났다 — 5분 타이머는 안전망이다.
+
+### Changed
+- **`docs/vault/` 3종을 실증 결과로 갱신**
+  - `RUNBOOK.md` — 1~4단계 전부 완료 표시, 실증 기록표, Forgejo API 확인 절차 추가,
+    「그 다음」에 general-host 설치본 v0.2.25 갱신을 0번으로 추가
+  - `HANDOVER.md` — 상태·검증표·다음 할 일·한 줄 요약을 실증 후 기준으로 재작성
+  - `DECISIONS.md` — 진행 현황 갱신, 실측 4건 추가
+- **`inbox` 조회 방법 정정.** `ssh vault-server 'ls -R /var/lib/herald/inbox/...'` 의
+  `Permission denied` 는 **정상**이다(`2770 hdrop:herald`, 관리 계정은 두 그룹에 속하지 않는다).
+  상태 확인은 `journalctl -u herald-collect` 또는 Forgejo API 로 한다.
+
+### 알려진 문제
+- general-host 에 설치된 `herald-send` 는 v0.2.24 판이라 파일 목록의 `memory/` 접두가 `emory/`·`mory/`
+  로 잘려 보인다. **표시만의 문제이고 전송·수집에는 영향이 없다.** v0.2.25 로 재설치하면 사라진다.
+- vault 에 들어간 54건은 전부 `memory/` 다. `staging/sessions` 가 비어 있기 때문이며,
+  `/session-save` 가 `HERALD_LOG_DIR` 로 저장하도록 고쳐야 세션기록이 쌓이기 시작한다.
+
 ## [0.2.25] - 2026-08-16
 
 ### Added
