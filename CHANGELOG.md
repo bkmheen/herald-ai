@@ -4,6 +4,18 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며,
 버전은 [유의적 버전(SemVer)](https://semver.org/lang/ko/) `major.minor.patch` 규칙을 사용합니다(1.0.0 이전 단계).
 
+## [0.2.27] - 2026-08-16
+
+### Added
+- **증분 전송 실증.** general-host 설치본을 v0.2.25 로 갱신한 뒤 `herald-send docs --dry-run` 을
+  재실행하니 `후보 54개 / 보낼 것 없음`. **서버에 「무엇을 갖고 있나」를 묻지 않고**
+  로컬 대장(`~/.herald/sent-docs.json`)만으로 중복을 걸렀고 해시 재계산도 건너뛰었다.
+  읽기 통로를 만들지 않는 증분이라는 설계의 핵심 주장이 실측으로 성립했다.
+
+### Changed
+- `HANDOVER.md`·`DECISIONS.md` — 증분 전송 실증 기록, general-host 설치본 v0.2.25 반영,
+  「지금 바로 실행할 명령」을 비움(남은 명령 없음)
+
 ## [0.2.26] - 2026-08-16
 
 ### Added
