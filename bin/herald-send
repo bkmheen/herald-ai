@@ -85,6 +85,13 @@ def log(msg):
     sys.stdout.flush()
 
 
+def ellipsize(s, width):
+    """긴 경로는 앞을 줄이되 잘렸음을 표시한다 — 파일 이름이 남는 쪽이 읽기 좋다."""
+    if len(s) <= width:
+        return s
+    return "…" + s[-(width - 1):]
+
+
 # ── 대장 ────────────────────────────────────────────────────────────────
 def ledger_path(kind):
     return os.path.join(HERALD, "sent-%s.json" % kind)
@@ -348,7 +355,7 @@ def run_kind(kind, conf, dry):
         total = sum(s for _p, _r, _d, s, _m in picked)
         log("보낼 것 %d개 · %.1f MB" % (len(picked), total / 1048576.0))
         for _p, rel, _d, s, _m in picked[:5]:
-            log("   %-60s %8.1f KB" % (rel[-60:], s / 1024.0))
+            log("   %-60s %8.1f KB" % (ellipsize(rel, 60), s / 1024.0))
         if len(picked) > 5:
             log("   … 외 %d개" % (len(picked) - 5))
 

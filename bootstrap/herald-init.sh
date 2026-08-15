@@ -114,9 +114,34 @@ chmod 600 "$CONF"
 sed 's/^/  /' "$CONF"
 
 say "4. 세션 기록 저장 위치"
-info "다음 줄을 셸 설정(~/.bashrc 또는 ~/.zshrc)에 넣으십시오:"
+# 셸 설정 파일에 직접 넣는다 (멱등·백업).
+#   ~/.profile 이 필수다 — 우분투 기본 ~/.bashrc 는 맨 앞에서
+#   `case $- in *i*) ;; *) return;; esac` 로 비대화형 셸에 대해 즉시 return 한다.
+#   그래서 .bashrc 에만 넣으면 `bash -lc` 같은 비대화형 로그인 셸에서 값이 비어 있다.
+LOGDIR_LINE="export HERALD_LOG_DIR=\"\$HOME/.herald/staging/sessions\""
+rc_written=0
+for rc in "$HOME/.profile" "$HOME/.bashrc" "$HOME/.zshrc"; do
+  # .profile 은 없으면 만든다. 나머지는 이미 있을 때만 손댄다.
+  if [[ ! -f "$rc" ]]; then
+    [[ "$rc" == "$HOME/.profile" ]] || continue
+    : > "$rc"
+  fi
+  if grep -q 'HERALD_LOG_DIR' "$rc" 2>/dev/null; then
+    info "이미 설정됨 — $rc"
+    rc_written=$((rc_written + 1))
+    continue
+  fi
+  cp -a "$rc" "$rc.herald-bak.$(date +%Y%m%dT%H%M%S)"
+  {
+    printf '\n# herald-vault — /session-save 산출물 저장 위치 (herald-send 가 집어 올린다)\n'
+    printf '%s\n' "$LOGDIR_LINE"
+  } >> "$rc"
+  info "추가됨 — $rc  (원본 백업 있음)"
+  rc_written=$((rc_written + 1))
+done
+[[ $rc_written -gt 0 ]] || info "셸 설정 파일을 찾지 못했습니다 — 다음 줄을 직접 넣으십시오: $LOGDIR_LINE"
+info "새 셸부터 적용됩니다. 지금 셸에 바로 적용하려면:"
 printf '\n    export HERALD_LOG_DIR="%s/staging/sessions"\n\n' "$HERALD"
-info "그러면 /session-save 산출물이 이 위치에 쌓이고, herald-send 가 집어 올립니다."
 
 say "완료 — 관리자에게 아래 한 줄을 전달하십시오"
 echo

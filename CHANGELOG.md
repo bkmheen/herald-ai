@@ -4,6 +4,26 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며,
 버전은 [유의적 버전(SemVer)](https://semver.org/lang/ko/) `major.minor.patch` 규칙을 사용합니다(1.0.0 이전 단계).
 
+## [0.2.25] - 2026-08-16
+
+### Added
+- **`herald-init.sh` 가 `HERALD_LOG_DIR` 을 셸 설정에 직접 넣는다** (멱등·백업).
+  `~/.profile`·`~/.bashrc`·`~/.zshrc` 세 곳을 함께 갱신한다. 우분투 기본 `~/.bashrc` 는
+  맨 앞에서 `case $- in *i*) ;; *) return;; esac` 로 **비대화형 셸이면 즉시 return** 하므로
+  `.bashrc` 에만 넣으면 `bash -lc` 에서 값이 비어 있다 — general-host 에서 실측으로 확인했다.
+
+### Changed
+- **`herald-send` 의 파일 목록 표시 수정.** 긴 경로를 `rel[-60:]` 로 잘라 `memory/` 접두가
+  `emory/`·`mory/` 로 보였다. `ellipsize()` 로 잘린 자리에 `…` 를 붙인다.
+- **문서에 2단계 실측 반영** (`RUNBOOK.md`·`HANDOVER.md`·`DECISIONS.md`)
+  - 1단계(push)·2단계(general-host 참여) 완료, general-host 공개키 기록, 3단계는 사용자 직접 실행
+  - 새 함정 4건: 우분투 `.bashrc` 비대화형 return · vault-server sudo 비밀번호 요구 ·
+    general-host python 이중(3.8.10/3.9.13) · 하네스 Bash 차단 재발
+
+### 미검증
+- 이 판의 `herald-init.sh`·`herald-send` 는 하네스가 `bash -n`·`py_compile` 을 차단해
+  **구문 검사를 하지 못했다.** 다음 세션 첫 작업으로 검사한다.
+
 ## [0.2.24] - 2026-08-16
 
 ### Changed
