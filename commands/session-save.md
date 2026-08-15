@@ -1,5 +1,5 @@
 ---
-description: 이번 세션의 작업 내용을 일자·시간별로 정리한 개발기록 MD를 파일로 생성·저장 (기본 ~/Desktop, HERALD_LOG_DIR 로 변경). 직전 /session-log 의 필터 범위를 그대로 이어받습니다(상태 파일 인계). 인자로 조건을 직접 줄 수도 있습니다. (화면 미리보기만 원하면 /session-log)
+description: 이번 세션의 작업 내용을 일자·시간별로 정리한 개발기록 MD를 herald-vault 에 저장 (관리 호스트는 ~/herald-vault/sessions/YYYY/MM, 일반 호스트는 HERALD_LOG_DIR, 둘 다 없으면 ~/Desktop). 프론트매터·색인까지 갱신합니다. 직전 /session-log 의 필터 범위를 그대로 이어받습니다. (화면 미리보기만 원하면 /session-log)
 argument-hint: "[필터 조건 — 생략 시 직전 /session-log 범위 또는 전체]"
 ---
 
@@ -60,18 +60,68 @@ if [ -f "$STATE" ]; then echo "=== 인계 상태 파일 발견 ==="; cat "$STATE
 
 - 필터 적용 후 항목이 **0건**이면 **파일을 생성하지 말고**, "조건에 맞는 작업이 없어 저장하지 않았습니다 (조건: {…})"라고 보고한 뒤 종료하십시오.
 
-## 3. 파일명·위치
+## 3. 파일명·위치 (herald-vault 규약)
 
-- 위치: 환경변수 `HERALD_LOG_DIR` 가 설정돼 있으면 그 경로, 없으면 `~/Desktop/`.
-  (셸에서 `echo "${HERALD_LOG_DIR:-$HOME/Desktop}"` 로 대상 디렉토리를 먼저 확인하십시오. 없으면 생성.)
-- 파일명: `{YYMMDD}-{요일} [{작업디렉토리 basename}{·필터범위}]-{HHMM} 세션 작업기록.md`
-  - `[{작업디렉토리 basename}]` 부제목이 어느 프로젝트의 기록인지 식별합니다 — 예: `herald-ai` → `[herald-ai]`.
-  - **필터가 적용된 경우** basename 뒤에 `·{범위}` 를 덧붙여 구분한다 — 예 include={개발}, exclude={테스트} → `[herald-ai·개발]`. 필터가 없으면 범위 접미는 생략한다.
-  - `{HHMM}` 은 종료(생성) 시각. **여러 날에 걸치면 종료일 `{끝MMDD}`** 로 대신 표기(예: 06-13~06-14 → `-0614`).
-  - 예(2026-06-13~14, herald-ai, 개발만): `260613-토 [herald-ai·개발]-0614 세션 작업기록.md`
-  - 같은 이름 재생성 시 ` (2)` 등으로 덮어쓰기 회피.
+> 상세 설계는 herald-ai `docs/vault/SESSION-RECORD.md`. 이 기록은 **바탕화면이 아니라 vault 로** 모입니다.
+
+### 3.1 위치 결정 순서
+
+```bash
+if [ -n "$HERALD_LOG_DIR" ]; then DEST="$HERALD_LOG_DIR"                       # 1. 일반 호스트(staging)
+elif [ -d "$HOME/herald-vault/sessions" ]; then                                 # 2. 관리 호스트(vault)
+  DEST="$HOME/herald-vault/sessions/$(date +%Y)/$(date +%m)"
+else DEST="$HOME/Desktop"; fi                                                   # 3. 폴백
+mkdir -p "$DEST"; echo "$DEST"
+```
+
+> ⚠ **관리 호스트에는 `HERALD_LOG_DIR` 를 설정하지 않습니다.** 설정하면 2번을 건너뛰어 vault 대신
+> staging 에 쌓입니다. 일반 호스트(general-host 등)만 설정합니다.
+>
+> `{YYYY}/{MM}` 은 **세션 시작 날짜** 기준입니다 (여러 날에 걸치면 시작일).
+
+### 3.2 파일명
+
+```
+{YYMMDD}-{요일}--{호스트}--{작업디렉토리 basename}{·필터범위}--{HHMM}.md
+```
+
+- 예: `260816-일--admin-host--herald-ai--0930.md`
+- **호스트를 반드시 넣습니다.** 여러 컴퓨터의 기록이 한 디렉토리에 모이므로, 파일명만으로 구분되어야 합니다.
+  호스트 이름은 `~/.herald/vault.conf` 의 `HOST_NAME` → 없으면 `hostname -s` 로 정합니다.
+- **필터가 적용된 경우** basename 뒤에 `·{범위}` 를 덧붙입니다 — 예 `herald-ai·개발`.
+- `{HHMM}` 은 종료(생성) 시각.
+- 같은 이름이 있으면 ` (2)` 등으로 덮어쓰기를 피합니다.
 
 ## 4. 문서 구조 (반드시 이 순서)
+
+### 4.1 프론트매터 — 스키마 `herald.session-record/1.0.0` (필수)
+
+파일 맨 앞에 아래 블록을 넣습니다. 이것이 있어야 `herald-index` 가 색인하고,
+Atelier·Dossier 가 참조할 수 있습니다. **판본(`schema`)을 반드시 밝힙니다.**
+
+```yaml
+---
+schema: herald.session-record/1.0.0
+id: {파일명에서 .md 를 뺀 값}
+host: {호스트 이름}
+machine_id: {~/.herald/machine_id 가 있으면 그 값, 없으면 생략}
+project: {작업디렉토리 basename}
+cwd: {작업디렉토리 절대경로}
+branch: {git 브랜치 — 저장소가 아니면 생략}
+started: {시작 ISO8601, 오프셋 포함}
+ended: {종료 ISO8601}
+tags: [{카테고리 태그들}]
+versions: {from: "{시작 버전}", to: "{끝 버전}"}
+commits: [{짧은 해시들}]
+filter: {필터 원문 또는 null}
+summary: {한 줄 요약 — INDEX 에 그대로 실립니다}
+---
+```
+
+규약: 값에 `:`·`#` 이 들어가면 큰따옴표로 감쌉니다. **줄바꿈이 들어가는 값은 쓰지 않습니다**
+(파서를 단순하게 유지하기 위한 약속입니다). 모르는 값은 **지어내지 말고 생략**합니다.
+
+### 4.2 본문 (프론트매터 바로 다음)
 
 ```
 # {제목} — 세션 작업기록
@@ -105,7 +155,20 @@ if [ -f "$STATE" ]; then echo "=== 인계 상태 파일 발견 ==="; cat "$STATE
 - 요약은 개괄식(시간대 + 무엇을). 세부는 항목별로 "무엇을 왜 어떻게 + 검증/커밋". 상태 파일의 `detail` 을 세부 작성의 출발점으로 활용.
 - 사실만. 커밋이 있으면 해시·버전을 함께. 미해결·후속 과제도 명시.
 
-## 6. 마무리
+## 6. 색인 갱신 (관리 호스트에서만)
+
+vault 에 저장했다면(위 2번 경로) 곧바로 색인을 다시 만듭니다. **멱등하므로 몇 번 돌려도 안전합니다.**
+
+```bash
+~/.herald/bin/herald-index 2>/dev/null || herald-index
+```
+
+- `sessions/INDEX.md`(사람용 타임라인)와 `sessions/index.json`(기계용)이 새로 생성됩니다.
+- `HERALD_LOG_DIR` 로 저장한 일반 호스트는 **색인을 만들지 않습니다** — vault 를 읽을 수 없기 때문입니다.
+  그 기록은 `herald-send docs` 로 올라가고, 관리 호스트가 `herald-sort` → `herald-index` 로 반영합니다.
+- vault 는 git 저장소입니다. 커밋·push 는 **사용자가 요청할 때만** 합니다.
+
+## 7. 마무리
 
 - 파일을 쓴 뒤, **저장된 절대경로**와 한 줄 요약(적용 필터 범위 포함)을 보고하십시오.
 - 인계에 사용한 상태 파일은 보고 후 정리해도 됩니다: `rm -f "$STATE"` (다음 세션 혼선 방지). 단, 같은 범위로 재저장할 여지가 있으면 남겨 둡니다.

@@ -4,6 +4,47 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며,
 버전은 [유의적 버전(SemVer)](https://semver.org/lang/ko/) `major.minor.patch` 규칙을 사용합니다(1.0.0 이전 단계).
 
+## [0.2.28] - 2026-08-16
+
+세션기록을 **바탕화면이 아니라 herald-vault 로** 모은다. 무엇을 찾든 vault 를 가장 먼저 뒤지면 나온다.
+
+### Added
+- **스키마 `herald.session-record/1.0.0` 신설.** 세션기록 MD 맨 앞에 YAML 프론트매터를 붙여
+  `schema`·`host`·`project`·`started`·`tags`·`versions`·`commits`·`summary` 를 기계 판독 가능하게 남긴다.
+  **각 파일이 `schema:` 로 자기 판본을 밝히므로**, Atelier·Dossier 가 어느 규약으로 쓰인 기록인지
+  항상 알 수 있다. 판본이 올라가도 **옛 기록은 고치지 않고** 읽는 쪽이 분기한다.
+- **`bin/herald-index`** — `sessions/**/*.md` 를 훑어 `sessions/INDEX.md`(사람용 타임라인)와
+  `sessions/index.json`(기계용 색인, 스키마 `herald.session-index/1.0.0`)을 **재생성**한다.
+  **멱등** — `generated` 시각만 달라진 경우는 변경으로 치지 않는다.
+- **`bin/herald-find`** — vault 검색. 로컬 clone 이 있으면 `ripgrep`(없으면 `grep`),
+  없으면 Forgejo API 로 색인·파일을 받아 훑는다. `--host`·`--project`·`--tag`·`--since`·`--until`·
+  `--no-legacy`·`--list`·`--open`·`--raw` 지원.
+- **`bin/herald-sort`** — `_inbox/<host>/` 회수분을 `sessions/{YYYY}/{MM}`·`handover/{host}`·
+  `memory/{slug}`·`env/{host}` 제자리로 옮긴다. **덮어쓰지 않고**(같은 이름·다른 내용이면 충돌 보고),
+  처리한 꾸러미는 지우지 않고 `_inbox/{host}/_done/` 으로 옮긴다. 기본은 모의 실행.
+- **`bin/herald-legacy-import`** — 흩어진 옛 `*세션 작업기록*.md` 를 `sessions/_legacy/` 로 모은다.
+  **파일명·내용을 고치지 않고**, 원본 경로·sha256·시각을 `_legacy/MANIFEST.json` 에 남겨
+  `--undo` 로 되돌릴 수 있다. 기본은 모의 실행이며 `--apply` 를 줘야 옮긴다.
+- **`docs/vault/SESSION-RECORD.md`** — 이 파이프라인의 설계 단일 출처.
+- **`install.sh` 가 `bin/` 을 `~/.herald/bin/` 에 설치**하고 PATH 안내를 띄운다.
+
+### Changed
+- **`/session-save` 를 vault 규약으로 개정.** 저장 위치는 `HERALD_LOG_DIR` → `~/herald-vault/sessions/{YYYY}/{MM}`
+  → `~/Desktop` 순으로 정하고, 파일명에 **호스트를 넣는다**(`260816-일--admin-host--herald-ai--0930.md`).
+  저장 뒤 관리 호스트는 `herald-index` 로 색인을 갱신한다. `/session-log` 는 바뀌지 않는다.
+
+### 설계 결정
+- **「쓰기는 한 곳, 색인은 파생」**. 저장 시 INDEX 에 append 하는 방식은 폐기했다 —
+  일반 호스트는 vault 를 읽지 못해 INDEX 를 갱신할 수 없기 때문이다. 색인을 파생물로 두면
+  레거시 이관·`_inbox` 회수·수동 편집 뒤에 **한 번 다시 돌리면 정합이 회복된다.**
+- **사실을 지어내지 않는다.** 옛 기록엔 호스트 정보가 없으므로 `unknown` 으로 두고 `inferred: true` 로
+  표시한다. 옛 파일명 끝 4자리가 `HHMM` 인지 `끝MMDD` 인지 규약상 구분되지 않아 **추정하지 않는다.**
+
+### 미검증
+- `herald-sort --apply` 와 `herald-legacy-import` 는 하네스 분류기가 실행을 차단해
+  **런타임 검증을 하지 못했다.** 나머지(`herald-index` 전체 경로, `herald-find` 목록·검색·필터·열기,
+  `herald-sort` 모의 실행)는 임시 vault 로 실측 통과했다.
+
 ## [0.2.27] - 2026-08-16
 
 ### Added

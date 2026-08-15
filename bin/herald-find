@@ -1,0 +1,323 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""herald-find — vault 에서 찾는다. **무엇을 찾든 여기를 가장 먼저 뒤진다.**
+
+  두 경로를 자동으로 고른다.
+    로컬 clone 이 있으면  → ripgrep(없으면 grep) 으로 전문 검색   (빠르다)
+    없으면               → Forgejo API 로 색인·파일을 받아 검색  (clone 불필요)
+
+  설계: docs/vault/SESSION-RECORD.md
+
+  사용
+    herald-find "투입구"                          전문 검색
+    herald-find --project herald-ai --since 2026-08-01
+    herald-find --host general-host --tag 버그
+    herald-find --list                            색인 타임라인만
+    herald-find --open <id|경로>                  기록 내용 출력
+    herald-find "검색어" --raw                    원문(대화 jsonl)까지 — 로컬 clone 전용
+
+  일반 호스트(투입 전용)는 읽기 권한이 없어 조회되지 않는다 — 설계대로다.
+"""
+from __future__ import print_function
+
+import argparse
+import io
+import json
+import os
+import re
+import subprocess
+import sys
+
+CONF = os.path.join(os.path.expanduser("~"), ".herald", "vault.conf")
+
+
+def die(msg, code=1):
+    sys.stderr.write("herald-find: %s\n" % msg)
+    sys.exit(code)
+
+
+def log(msg):
+    sys.stdout.write("%s\n" % msg)
+
+
+def load_conf():
+    conf = {}
+    if os.path.isfile(CONF):
+        try:
+            with open(CONF, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, _, v = line.partition("=")
+                    conf[k.strip()] = v.strip().strip('"').strip("'")
+        except (IOError, OSError):
+            pass
+    return conf
+
+
+# ── 색인 ────────────────────────────────────────────────────────────────
+def load_index_local(vault):
+    path = os.path.join(vault, "sessions", "index.json")
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except (IOError, OSError, ValueError):
+        return None
+
+
+def api_get(conf, path, raw=False):
+    """Forgejo API. 토큰은 파일에서만 읽는다 — 인자·환경으로 흘리지 않는다."""
+    try:
+        from urllib.request import Request, urlopen
+        from urllib.error import URLError, HTTPError
+    except ImportError:  # py2 는 지원하지 않는다
+        die("python3 가 필요합니다")
+
+    base = conf.get("VAULT_API")
+    if not base:
+        return None
+    token = None
+    tf = conf.get("VAULT_TOKEN_FILE")
+    if tf and os.path.isfile(os.path.expanduser(tf)):
+        try:
+            with open(os.path.expanduser(tf), "r", encoding="utf-8") as fh:
+                token = fh.read().strip()
+        except (IOError, OSError):
+            token = None
+    url = base.rstrip("/") + path
+    req = Request(url)
+    if token:
+        req.add_header("Authorization", "token %s" % token)
+    try:
+        with urlopen(req, timeout=20) as resp:
+            body = resp.read()
+    except (HTTPError, URLError, OSError) as exc:
+        die("API 조회 실패 (%s): %s" % (url, exc))
+    if raw:
+        return body
+    try:
+        return json.loads(body.decode("utf-8"))
+    except ValueError:
+        return None
+
+
+def load_index_api(conf):
+    repo = conf.get("VAULT_REPO", "vault/herald-vault")
+    body = api_get(conf, "/repos/%s/raw/sessions/index.json" % repo, raw=True)
+    if body is None:
+        return None
+    try:
+        return json.loads(body.decode("utf-8"))
+    except ValueError:
+        return None
+
+
+# ── 필터 ────────────────────────────────────────────────────────────────
+def apply_filters(records, args):
+    out = []
+    for r in records:
+        if args.host and (r.get("host") or "").lower() != args.host.lower():
+            continue
+        if args.project and (r.get("project") or "").lower() != args.project.lower():
+            continue
+        if args.tag and args.tag not in (r.get("tags") or []):
+            continue
+        when = r.get("started_utc") or ""
+        if args.since and when and when[:10] < args.since:
+            continue
+        if args.since and not when:
+            continue
+        if args.until and when and when[:10] > args.until:
+            continue
+        if args.no_legacy and r.get("inferred"):
+            continue
+        out.append(r)
+    return out
+
+
+def fmt(r):
+    ver = r.get("versions") or {}
+    vtxt = ""
+    if isinstance(ver, dict) and ver.get("from"):
+        vtxt = "  %s→%s" % (ver.get("from"), ver.get("to") or ver.get("from"))
+    mark = " ·추정" if r.get("inferred") else ""
+    return "%s  %-10s %-16s %s%s%s" % (
+        r.get("started_utc") or "(시각 미상)   ",
+        r.get("host") or "-",
+        (r.get("project") or "-")[:16],
+        r.get("summary") or r.get("id"),
+        vtxt, mark)
+
+
+# ── 전문 검색 ───────────────────────────────────────────────────────────
+def which(name):
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        p = os.path.join(d, name)
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+    return None
+
+
+def grep_local(vault, term, roots, limit):
+    """ripgrep 이 있으면 그것을, 없으면 grep -r 을 쓴다. 결과는 (경로, 줄) 목록."""
+    targets = [os.path.join(vault, d) for d in roots
+               if os.path.isdir(os.path.join(vault, d))]
+    if not targets:
+        return []
+    # 색인은 파생물이라 검색 결과에 섞이면 같은 내용이 두 번 나온다
+    rg = which("rg")
+    if rg:
+        cmd = [rg, "--no-heading", "--line-number", "--color", "never",
+               "--max-count", "3", "-i",
+               "--glob", "!INDEX.md", "--glob", "!index.json",
+               "-e", term] + targets
+    else:
+        cmd = ["grep", "-rniI", "--max-count=3",
+               "--exclude=INDEX.md", "--exclude=index.json",
+               "-e", term] + targets
+    try:
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE,
+                              stderr=subprocess.DEVNULL)
+    except (OSError, AttributeError):
+        return []
+    hits = []
+    for line in proc.stdout.decode("utf-8", "replace").splitlines():
+        parts = line.split(":", 2)
+        if len(parts) < 3:
+            continue
+        path, lineno, text = parts
+        hits.append((os.path.relpath(path, vault), lineno, text.strip()))
+        if len(hits) >= limit:
+            break
+    return hits
+
+
+def grep_api(conf, records, term, limit):
+    """색인에 오른 파일만 받아 훑는다. 요청 수를 limit 으로 묶는다."""
+    repo = conf.get("VAULT_REPO", "vault/herald-vault")
+    needle = term.lower()
+    hits = []
+    for r in records:
+        if len(hits) >= limit:
+            break
+        body = api_get(conf, "/repos/%s/raw/%s" % (repo, r["path"]), raw=True)
+        if not body:
+            continue
+        text = body.decode("utf-8", "replace")
+        for i, line in enumerate(text.splitlines(), 1):
+            if needle in line.lower():
+                hits.append((r["path"], str(i), line.strip()))
+                break
+    return hits
+
+
+# ── 열기 ────────────────────────────────────────────────────────────────
+def do_open(vault, conf, records, key):
+    target = None
+    for r in records:
+        if r.get("id") == key or r.get("path") == key or r.get("path", "").endswith("/" + key):
+            target = r
+            break
+    if target is None and os.path.isfile(os.path.join(vault or "", key)):
+        target = {"path": key}
+    if target is None:
+        die("찾을 수 없습니다: %s" % key)
+
+    if vault:
+        path = os.path.join(vault, target["path"])
+        if os.path.isfile(path):
+            with io.open(path, "r", encoding="utf-8") as fh:
+                sys.stdout.write(fh.read())
+            return 0
+    repo = conf.get("VAULT_REPO", "vault/herald-vault")
+    body = api_get(conf, "/repos/%s/raw/%s" % (repo, target["path"]), raw=True)
+    if body is None:
+        die("내용을 가져오지 못했습니다: %s" % target["path"])
+    sys.stdout.write(body.decode("utf-8", "replace"))
+    return 0
+
+
+def main():
+    ap = argparse.ArgumentParser(add_help=True, description="vault 검색")
+    ap.add_argument("term", nargs="?", help="검색어 (생략하면 목록)")
+    ap.add_argument("--vault", default=os.environ.get(
+        "HERALD_VAULT", os.path.join(os.path.expanduser("~"), "herald-vault")))
+    ap.add_argument("--host")
+    ap.add_argument("--project")
+    ap.add_argument("--tag")
+    ap.add_argument("--since", help="YYYY-MM-DD")
+    ap.add_argument("--until", help="YYYY-MM-DD")
+    ap.add_argument("--no-legacy", action="store_true", help="추정 항목 제외")
+    ap.add_argument("--list", action="store_true", help="색인 타임라인만 출력")
+    ap.add_argument("--open", dest="open_key", help="기록 내용 출력")
+    ap.add_argument("--raw", action="store_true",
+                    help="원문 저장소까지 검색 (로컬 clone 전용)")
+    ap.add_argument("--limit", type=int, default=40)
+    args = ap.parse_args()
+
+    conf = load_conf()
+    vault = os.path.abspath(os.path.expanduser(args.vault))
+    have_clone = os.path.isdir(os.path.join(vault, "sessions"))
+
+    index = load_index_local(vault) if have_clone else None
+    source = "로컬 clone"
+    if index is None:
+        index = load_index_api(conf)
+        source = "Forgejo API"
+        if index is None:
+            die("색인을 찾을 수 없습니다.\n"
+                "  · 관리 호스트라면 `herald-index` 를 먼저 돌리십시오\n"
+                "  · 원격 조회라면 ~/.herald/vault.conf 에 VAULT_API·VAULT_TOKEN_FILE 을 두십시오\n"
+                "  · 일반 호스트(투입 전용)는 읽기 권한이 없습니다 — 설계대로입니다")
+
+    records = apply_filters(index.get("records", []), args)
+
+    if args.open_key:
+        return do_open(vault if have_clone else None, conf,
+                       index.get("records", []), args.open_key)
+
+    if args.list or not args.term:
+        log("── %s · 기록 %d개 ──" % (source, len(records)))
+        for r in records[-args.limit:]:
+            log(fmt(r))
+        return 0
+
+    log("── %s · \"%s\" ──" % (source, args.term))
+    roots = ["sessions", "handover", "memory"]
+    if have_clone:
+        hits = grep_local(vault, args.term, roots, args.limit)
+        if args.raw:
+            raw_vault = vault + "-raw"
+            if os.path.isdir(raw_vault):
+                hits += grep_local(raw_vault, args.term, ["raw"], args.limit)
+            else:
+                log("  (원문 저장소 %s 가 없습니다 — 건너뜁니다)" % raw_vault)
+    else:
+        hits = grep_api(conf, records, args.term, args.limit)
+
+    if not hits:
+        log("  없음")
+        return 1
+
+    by_path = {}
+    for path, lineno, text in hits:
+        by_path.setdefault(path, []).append((lineno, text))
+
+    meta = {r["path"]: r for r in index.get("records", [])}
+    for path in sorted(by_path):
+        r = meta.get(path)
+        if r:
+            log("\n%s" % fmt(r))
+            log("  %s" % path)
+        else:
+            log("\n  %s" % path)
+        for lineno, text in by_path[path][:3]:
+            log("    %s: %s" % (lineno, text[:160]))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

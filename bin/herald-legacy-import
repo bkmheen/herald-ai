@@ -1,0 +1,223 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""herald-legacy-import — 흩어진 옛 세션기록을 vault 로 모은다.
+
+  원칙 (사용자 승인 2026-08-16, 설계 ①§4.6 ⓐ안)
+    · 파일명·내용을 **고치지 않는다.** 프론트매터도 넣지 않는다
+    · 옛 파일엔 호스트 정보가 없다 → **추정해 넣지 않는다** (색인이 unknown 으로 둔다)
+    · 이동 내역을 MANIFEST.json 에 남겨 **되돌릴 수 있게** 한다
+    · **기본은 모의 실행.** --apply 를 줘야 실제로 옮긴다
+
+  사용
+    herald-legacy-import ~/Desktop ~/볼트상위/노트볼트       # 무엇이 옮겨질지만 본다
+    herald-legacy-import ~/Desktop --apply                        # 실제 이동
+    herald-legacy-import ~/Desktop --copy --apply                 # 원본을 남기고 복사
+    herald-legacy-import --undo                                   # 마지막 이동을 되돌린다
+
+  옮긴 뒤에는 `herald-index` 를 돌려 색인에 반영한다.
+"""
+from __future__ import print_function
+
+import argparse
+import datetime
+import fnmatch
+import hashlib
+import json
+import os
+import shutil
+import sys
+
+DEFAULT_PATTERNS = ["*세션 작업기록*.md", "*세션작업기록*.md"]
+SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__",
+             "Library", ".Trash", ".cache"}
+
+
+def utcnow():
+    """UTC 현재 시각. utcnow() 는 3.12 에서 폐기 예고되어 tz-aware 로 쓴다."""
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+def log(msg):
+    sys.stdout.write("  %s\n" % msg)
+    sys.stdout.flush()
+
+
+def die(msg, code=1):
+    sys.stderr.write("herald-legacy-import: %s\n" % msg)
+    sys.exit(code)
+
+
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def scan(roots, patterns):
+    found = []
+    seen = set()
+    for root in roots:
+        root = os.path.abspath(os.path.expanduser(root))
+        if not os.path.isdir(root):
+            log("건너뜀 (없는 경로): %s" % root)
+            continue
+        for base, dirs, files in os.walk(root):
+            dirs[:] = sorted(d for d in dirs
+                             if d not in SKIP_DIRS and not d.startswith("."))
+            for fn in sorted(files):
+                if not any(fnmatch.fnmatch(fn, p) for p in patterns):
+                    continue
+                path = os.path.join(base, fn)
+                real = os.path.realpath(path)
+                if real in seen:
+                    continue
+                seen.add(real)
+                found.append(path)
+    return found
+
+
+def load_manifest(path):
+    if os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                return json.load(fh)
+        except (IOError, OSError, ValueError):
+            pass
+    return {"schema": "herald.legacy-manifest/1.0.0", "moves": []}
+
+
+def save_manifest(path, data):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    os.replace(tmp, path)
+
+
+def unique_dest(dest_dir, name):
+    """이름이 겹치면 ' (2)' 를 붙인다 — 덮어쓰지 않는다."""
+    stem, ext = os.path.splitext(name)
+    cand = os.path.join(dest_dir, name)
+    n = 2
+    while os.path.exists(cand):
+        cand = os.path.join(dest_dir, "%s (%d)%s" % (stem, n, ext))
+        n += 1
+    return cand
+
+
+def do_undo(manifest_path, apply_):
+    data = load_manifest(manifest_path)
+    moves = [m for m in data.get("moves", []) if not m.get("undone")]
+    if not moves:
+        log("되돌릴 이동이 없습니다.")
+        return 0
+    batch = moves[-1]["batch"]
+    targets = [m for m in moves if m["batch"] == batch]
+    log("되돌릴 묶음: %s (%d건)" % (batch, len(targets)))
+    for m in targets:
+        if m.get("mode") == "copy":
+            log("  복사본 삭제 %s" % m["dest"])
+            if apply_ and os.path.isfile(m["dest"]):
+                os.remove(m["dest"])
+        else:
+            log("  %s ← %s" % (m["orig"], m["dest"]))
+            if apply_:
+                if not os.path.isfile(m["dest"]):
+                    log("    (대상이 없어 건너뜁니다)")
+                    continue
+                os.makedirs(os.path.dirname(m["orig"]), exist_ok=True)
+                shutil.move(m["dest"], m["orig"])
+        m["undone"] = True
+    if apply_:
+        save_manifest(manifest_path, data)
+        log("되돌리기 완료")
+    else:
+        log("[모의] --apply 를 주면 실제로 되돌립니다")
+    return 0
+
+
+def main():
+    ap = argparse.ArgumentParser(add_help=True,
+                                 description="옛 세션기록을 vault/_legacy 로 모은다")
+    ap.add_argument("roots", nargs="*", help="찾을 경로 (여러 개 가능)")
+    ap.add_argument("--vault", default=os.environ.get(
+        "HERALD_VAULT", os.path.join(os.path.expanduser("~"), "herald-vault")))
+    ap.add_argument("--pattern", action="append", help="파일명 패턴 (기본 세션 작업기록)")
+    ap.add_argument("--apply", action="store_true", help="실제로 옮긴다 (기본은 모의)")
+    ap.add_argument("--copy", action="store_true", help="원본을 남기고 복사한다")
+    ap.add_argument("--undo", action="store_true", help="마지막 묶음을 되돌린다")
+    args = ap.parse_args()
+
+    vault = os.path.abspath(os.path.expanduser(args.vault))
+    legacy = os.path.join(vault, "sessions", "_legacy")
+    manifest_path = os.path.join(legacy, "MANIFEST.json")
+
+    if not os.path.isdir(os.path.join(vault, "sessions")):
+        die("vault 의 sessions 를 찾을 수 없습니다: %s" % vault)
+
+    if args.undo:
+        return do_undo(manifest_path, args.apply)
+
+    if not args.roots:
+        die("찾을 경로를 하나 이상 주십시오. 예) herald-legacy-import ~/Desktop")
+
+    patterns = args.pattern or DEFAULT_PATTERNS
+    found = scan(args.roots, patterns)
+    if not found:
+        log("대상이 없습니다 (패턴: %s)" % ", ".join(patterns))
+        return 0
+
+    data = load_manifest(manifest_path)
+    known = {m["sha256"] for m in data.get("moves", []) if not m.get("undone")}
+    batch = utcnow().strftime("%Y%m%dT%H%M%SZ")
+    now = utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    planned, skipped = [], 0
+    for path in found:
+        digest = sha256(path)
+        if digest in known:
+            skipped += 1
+            continue
+        known.add(digest)
+        planned.append((path, digest))
+
+    log("찾음 %d개 · 이미 이관됨 %d개 · 옮길 것 %d개"
+        % (len(found), skipped, len(planned)))
+    if not planned:
+        return 0
+
+    if args.apply:
+        os.makedirs(legacy, exist_ok=True)
+
+    mode = "copy" if args.copy else "move"
+    for path, digest in planned:
+        dest = unique_dest(legacy, os.path.basename(path))
+        log("%s → %s" % (path, os.path.relpath(dest, vault)))
+        if not args.apply:
+            continue
+        st = os.stat(path)
+        if args.copy:
+            shutil.copy2(path, dest)
+        else:
+            shutil.move(path, dest)
+        data["moves"].append({
+            "batch": batch, "mode": mode,
+            "orig": path, "dest": dest,
+            "sha256": digest, "size": st.st_size,
+            "mtime": datetime.datetime.fromtimestamp(
+                st.st_mtime, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "at": now,
+        })
+
+    if args.apply:
+        save_manifest(manifest_path, data)
+        log("MANIFEST 갱신: %s" % os.path.relpath(manifest_path, vault))
+        log("다음: herald-index 를 돌려 색인에 반영하십시오")
+    else:
+        log("[모의] 실제로 옮기려면 --apply 를 주십시오")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

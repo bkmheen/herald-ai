@@ -175,13 +175,41 @@ EOF
 - **필터**: 자연어 조건을 표준 카테고리(`개발`·`버그`·`테스트`·`문서`·`리서치`·`git`·`설정`·`기타`)의 포함/제외로 환산해 적용합니다. 예: `/session-log 테스트를 제외한 개발 관련 업무`.
 - **워크플로**: 먼저 `/session-log` 로 차례를 미리 보고 → 만족하면 `/session-save` 로 같은 범위를 저장하는 흐름을 권장합니다. (`/session-save` 만 단독 호출해도 됩니다.)
 - 문서 맨 앞에 **작업 디렉토리**·**요약(시간대별 개괄)** 을 배치하고, 이어서 작업 목록·세부 내용을 시간순으로 기록합니다. git 저장소면 브랜치·세션 커밋(해시·시각)을 앵커로 보강합니다.
-- **출력 위치**(`/session-save`): 기본 `~/Desktop/`. 환경변수 `HERALD_LOG_DIR` 로 변경 가능.
+- **출력 위치**(`/session-save`) — v0.2.28 부터 **herald-vault 로 모입니다.**
 
-```bash
-export HERALD_LOG_DIR="$HOME/dev-logs"   # (선택) 기본값 ~/Desktop 대체
-```
+  | 순서 | 조건 | 저장 위치 |
+  |---|---|---|
+  | 1 | `HERALD_LOG_DIR` 가 설정됨 | 그 경로 (일반 호스트의 staging) |
+  | 2 | `~/herald-vault` 클론이 있음 | `sessions/{YYYY}/{MM}/` (관리 호스트) |
+  | 3 | 둘 다 없음 | `~/Desktop/` (폴백) |
+
+  ```bash
+  export HERALD_LOG_DIR="$HOME/dev-logs"   # (선택) 일반 호스트에서만 설정합니다
+  ```
+
+- 파일명에 **호스트가 들어갑니다** — `260816-일--admin-host--herald-ai--0930.md`.
+  여러 컴퓨터의 기록이 한 디렉토리에 모여도 섞이지 않습니다.
+- 문서 맨 앞에 **YAML 프론트매터**(스키마 `herald.session-record/1.0.0`)가 붙어 색인·검색·외부 참조가 됩니다.
 
 두 커맨드는 herald-ai 의 `task-tracker` 스킬에만 의존하며(상태 파일 인계에 `instance-resolve.sh` 사용), 쓰지 않으면 호출하지 않으면 됩니다.
+
+## 🗄️ herald-vault 도구 (`bin/` → `~/.herald/bin/`)
+
+세션기록·기억·환경을 사설 Forgejo 저장소 한곳에 모으고 **가장 먼저 여기를 뒤져** 찾게 하는 도구들입니다.
+설계는 [`docs/vault/SESSION-RECORD.md`](docs/vault/SESSION-RECORD.md), 절차는 [`docs/vault/RUNBOOK.md`](docs/vault/RUNBOOK.md).
+
+| 도구 | 하는 일 |
+|---|---|
+| `herald-find "검색어"` | vault 전문 검색. 로컬 clone 이 있으면 ripgrep, 없으면 Forgejo API |
+| `herald-index` | `sessions/INDEX.md`·`index.json` 재생성 (멱등) |
+| `herald-sort` | `_inbox/` 회수분을 제자리로 (관리 호스트) |
+| `herald-legacy-import` | 흩어진 옛 기록을 `sessions/_legacy/` 로 (기본 모의 실행·`--undo` 지원) |
+| `herald-send` / `herald-env` | 투입 전송 · 환경 스냅샷 (일반 호스트) |
+
+```bash
+export PATH="$HOME/.herald/bin:$PATH"
+herald-find "투입구" --project herald-ai --since 2026-08-01
+```
 
 ## 🧳 trip-ledger — 여행·출장 지출 원장
 

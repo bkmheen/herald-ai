@@ -1,0 +1,398 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""herald-index — 세션기록을 훑어 색인 두 벌을 다시 만든다.
+
+    sessions/INDEX.md    사람용 통합 타임라인 (UTC 시각순)
+    sessions/index.json  기계용 색인 (Atelier·Dossier 가 파싱)
+
+  설계: docs/vault/SESSION-RECORD.md
+  스키마: herald.session-record/1.0.0 · herald.session-index/1.0.0
+
+  이 도구는 **멱등**하다. 몇 번을 돌려도 결과가 같다.
+  색인은 파생물이므로, 레거시 이관·_inbox 회수·수동 편집 뒤에 한 번 돌리면 정합이 회복된다.
+
+  사용
+    herald-index                  ~/herald-vault 를 색인한다
+    herald-index --vault <경로>    다른 위치의 vault
+    herald-index --dry-run        쓰지 않고 무엇이 바뀌는지만 본다
+    herald-index --quiet          요약만 출력
+
+  관리 호스트(vault 클론을 가진 컴퓨터)에서 실행한다.
+"""
+from __future__ import print_function
+
+import argparse
+import datetime
+import json
+import os
+import re
+import sys
+
+RECORD_SCHEMA = "herald.session-record/1.0.0"
+INDEX_SCHEMA = "herald.session-index/1.0.0"
+
+INDEX_MARKER = "<!-- 아래부터 herald-index 가 생성한다. 이 주석 위를 편집하지 말 것 -->"
+OLD_MARKER = "<!-- 아래부터 append. 이 주석 위를 편집하지 말 것 -->"
+
+DEFAULT_HEADER = """# 세션 기록 통합 타임라인
+
+이 파일은 `herald-index` 가 `sessions/**/*.md` 의 프론트매터를 훑어 **매번 새로 만든다.**
+직접 편집하지 않는다 — 다음 실행에서 덮어쓰인다. 고칠 것은 원본 기록의 프론트매터다.
+
+```
+UTC시각 | 호스트 | 프로젝트 | 요약(파일 링크) | 버전
+```
+"""
+
+
+def utcstamp():
+    """UTC 현재 시각. utcnow() 는 3.12 에서 폐기 예고되어 쓰지 않는다."""
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def log(msg):
+    sys.stdout.write("  %s\n" % msg)
+    sys.stdout.flush()
+
+
+def die(msg, code=1):
+    sys.stderr.write("herald-index: %s\n" % msg)
+    sys.exit(code)
+
+
+# ── 프론트매터 ──────────────────────────────────────────────────────────
+def _scalar(raw):
+    """따옴표·null·목록·사전을 최소한으로 해석한다.
+
+    규약상 값에 줄바꿈이 없으므로 이 정도로 충분하다 (SESSION-RECORD.md §2.1).
+    """
+    v = raw.strip()
+    if v == "" or v.lower() in ("null", "~"):
+        return None
+    if len(v) >= 2 and v[0] == v[-1] and v[0] in ("'", '"'):
+        return v[1:-1]
+    if v.startswith("[") and v.endswith("]"):
+        inner = v[1:-1].strip()
+        if not inner:
+            return []
+        return [_scalar(p) for p in inner.split(",")]
+    if v.startswith("{") and v.endswith("}"):
+        inner = v[1:-1].strip()
+        out = {}
+        if not inner:
+            return out
+        for part in inner.split(","):
+            if ":" not in part:
+                continue
+            k, _, val = part.partition(":")
+            out[k.strip()] = _scalar(val)
+        return out
+    if v.lower() == "true":
+        return True
+    if v.lower() == "false":
+        return False
+    return v
+
+
+def parse_frontmatter(path):
+    """맨 앞 --- 블록을 사전으로 돌려준다. 없으면 None."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            first = fh.readline()
+            if first.strip() != "---":
+                return None
+            data = {}
+            for line in fh:
+                if line.strip() == "---":
+                    return data
+                if not line.strip() or line.lstrip().startswith("#"):
+                    continue
+                if ":" not in line:
+                    continue
+                key, _, val = line.partition(":")
+                data[key.strip()] = _scalar(val)
+            return None  # 닫히지 않은 블록은 프론트매터로 보지 않는다
+    except (IOError, OSError, UnicodeDecodeError):
+        return None
+
+
+# ── 시각 ────────────────────────────────────────────────────────────────
+ISO_RE = re.compile(
+    r"^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?"
+    r"(Z|[+-]\d{2}:?\d{2})?$"
+)
+
+
+def to_utc(value):
+    """ISO 8601 문자열을 UTC 'YYYY-MM-DDTHH:MMZ' 로. 실패하면 None.
+
+    datetime.fromisoformat 은 3.7+ 이고 'Z' 를 오래 지원하지 않아 직접 푼다.
+    """
+    if not value:
+        return None
+    m = ISO_RE.match(str(value).strip())
+    if not m:
+        return None
+    y, mo, d, hh, mm, ss, off = m.groups()
+    try:
+        dt = datetime.datetime(int(y), int(mo), int(d), int(hh), int(mm), int(ss or 0))
+    except ValueError:
+        return None
+    if off and off != "Z":
+        sign = 1 if off[0] == "+" else -1
+        body = off[1:].replace(":", "")
+        dt -= sign * datetime.timedelta(hours=int(body[:2]), minutes=int(body[2:4]))
+    return dt.strftime("%Y-%m-%dT%H:%MZ")
+
+
+# ── 파일명 추정 (프론트매터가 없는 기록 = 레거시) ────────────────────────
+NEW_NAME_RE = re.compile(r"^(\d{6})-(.+?)--(.+?)--(.+?)--(\d{4})$")
+LEGACY_RE = re.compile(r"^(\d{6})-(.)\s*\[([^\]]*)\]-(\d{4})\s*세션\s*작업기록")
+
+
+def _yymmdd(s):
+    try:
+        yy, mm, dd = int(s[0:2]), int(s[2:4]), int(s[4:6])
+        return datetime.date(2000 + yy, mm, dd)
+    except (ValueError, IndexError):
+        return None
+
+
+def infer_from_name(stem):
+    """파일명에서 뽑을 수 있는 것만 뽑는다. **없는 사실은 만들지 않는다.**"""
+    out = {"host": "unknown", "project": None, "filter": None,
+           "started": None, "inferred": True}
+
+    m = NEW_NAME_RE.match(stem)
+    if m:
+        day, _dow, host, project, hhmm = m.groups()
+        date = _yymmdd(day)
+        out["host"] = host
+        if "·" in project:
+            project, _, filt = project.partition("·")
+            out["filter"] = filt
+        out["project"] = project
+        if date:
+            out["started"] = "%sT%s:%s:00" % (date.isoformat(), hhmm[:2], hhmm[2:])
+        return out
+
+    m = LEGACY_RE.match(stem)
+    if m:
+        day, _dow, subject, _tail = m.groups()
+        date = _yymmdd(day)
+        if "·" in subject:
+            subject, _, filt = subject.partition("·")
+            out["filter"] = filt
+        out["project"] = subject or None
+        # 끝 4자리는 HHMM 인지 끝MMDD 인지 규약상 구분되지 않는다 → 추정하지 않는다
+        if date:
+            out["started"] = "%sT00:00:00" % date.isoformat()
+        return out
+
+    m = re.match(r"^(\d{6})", stem)
+    if m:
+        date = _yymmdd(m.group(1))
+        if date:
+            out["started"] = "%sT00:00:00" % date.isoformat()
+    return out
+
+
+# ── 수집 ────────────────────────────────────────────────────────────────
+SKIP_NAMES = {"INDEX.md", "index.json", "README.md"}
+
+
+def collect(vault):
+    root = os.path.join(vault, "sessions")
+    if not os.path.isdir(root):
+        die("sessions 디렉토리가 없습니다: %s" % root)
+
+    records = []
+    for base, dirs, files in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if not d.startswith("."))
+        for fn in sorted(files):
+            if not fn.endswith(".md") or fn in SKIP_NAMES:
+                continue
+            path = os.path.join(base, fn)
+            rel = os.path.relpath(path, vault)
+            stem = fn[:-3]
+
+            fm = parse_frontmatter(path)
+            if fm and fm.get("schema"):
+                rec = {
+                    "id": fm.get("id") or stem,
+                    "path": rel,
+                    "schema": fm.get("schema"),
+                    "host": fm.get("host") or "unknown",
+                    "machine_id": fm.get("machine_id"),
+                    "project": fm.get("project"),
+                    "cwd": fm.get("cwd"),
+                    "branch": fm.get("branch"),
+                    "started": fm.get("started"),
+                    "ended": fm.get("ended"),
+                    "tags": fm.get("tags") or [],
+                    "versions": fm.get("versions") or {},
+                    "commits": fm.get("commits") or [],
+                    "filter": fm.get("filter"),
+                    "summary": fm.get("summary") or "",
+                    "inferred": False,
+                }
+            else:
+                guess = infer_from_name(stem)
+                rec = {
+                    "id": stem,
+                    "path": rel,
+                    "schema": None,
+                    "host": guess["host"],
+                    "machine_id": None,
+                    "project": guess["project"],
+                    "cwd": None,
+                    "branch": None,
+                    "started": guess["started"],
+                    "ended": None,
+                    "tags": [],
+                    "versions": {},
+                    "commits": [],
+                    "filter": guess["filter"],
+                    "summary": first_heading(path) or stem,
+                    "inferred": True,
+                }
+
+            rec["started_utc"] = to_utc(rec["started"])
+            records.append(rec)
+
+    # 시각을 모르는 것은 맨 뒤로 보내되 경로로 안정 정렬한다
+    records.sort(key=lambda r: (r["started_utc"] or "9999", r["path"]))
+    return records
+
+
+def first_heading(path):
+    """레거시 기록의 첫 제목을 요약 대용으로 쓴다."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            for _ in range(20):
+                line = fh.readline()
+                if not line:
+                    break
+                if line.startswith("# "):
+                    return line[2:].strip()
+    except (IOError, OSError, UnicodeDecodeError):
+        pass
+    return None
+
+
+# ── 출력 ────────────────────────────────────────────────────────────────
+def md_escape(text):
+    return str(text).replace("|", "\\|").replace("[", "(").replace("]", ")")
+
+
+def render_index_md(vault, records):
+    path = os.path.join(vault, "sessions", "INDEX.md")
+    header = DEFAULT_HEADER
+    if os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                body = fh.read()
+            for marker in (INDEX_MARKER, OLD_MARKER):
+                if marker in body:
+                    header = body.split(marker)[0].rstrip("\n") + "\n"
+                    break
+        except (IOError, OSError, UnicodeDecodeError):
+            pass
+
+    lines = [header, INDEX_MARKER, ""]
+    for r in records:
+        when = r["started_utc"] or "(시각 미상)"
+        # 옛 파일명에는 공백·대괄호가 들어 있다. <> 로 감싸면 그대로 링크가 된다
+        # (퍼센트 인코딩하면 한글까지 깨져 사람이 못 읽는다).
+        href = os.path.relpath(r["path"], "sessions").replace(os.sep, "/")
+        href = href.replace("<", "%3C").replace(">", "%3E")
+        link = "[%s](<%s>)" % (md_escape(r["summary"] or r["id"]), href)
+        ver = r.get("versions") or {}
+        vtxt = ""
+        if isinstance(ver, dict) and ver.get("from"):
+            vtxt = "%s→%s" % (ver.get("from"), ver.get("to") or ver.get("from"))
+        mark = " ·추정" if r["inferred"] else ""
+        lines.append("%s | %s | %s | %s | %s%s" % (
+            when, r["host"], r["project"] or "-", link, vtxt or "-", mark))
+    return path, "\n".join(lines) + "\n"
+
+
+def render_index_json(vault, records, generated):
+    path = os.path.join(vault, "sessions", "index.json")
+    payload = {
+        "schema": INDEX_SCHEMA,
+        "record_schema": RECORD_SCHEMA,
+        "generated": generated,
+        "count": len(records),
+        "records": records,
+    }
+    return path, json.dumps(payload, ensure_ascii=False, indent=2,
+                            sort_keys=False) + "\n"
+
+
+def write_if_changed(path, text, dry):
+    old = None
+    if os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                old = fh.read()
+        except (IOError, OSError, UnicodeDecodeError):
+            old = None
+    if old == text:
+        return False
+    if not dry:
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.replace(tmp, path)
+    return True
+
+
+def main():
+    ap = argparse.ArgumentParser(add_help=True, description="세션기록 색인 재생성")
+    ap.add_argument("--vault", default=os.environ.get(
+        "HERALD_VAULT", os.path.join(os.path.expanduser("~"), "herald-vault")))
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--quiet", action="store_true")
+    args = ap.parse_args()
+
+    vault = os.path.abspath(os.path.expanduser(args.vault))
+    if not os.path.isdir(vault):
+        die("vault 를 찾을 수 없습니다: %s" % vault)
+
+    records = collect(vault)
+    generated = utcstamp()
+
+    md_path, md_text = render_index_md(vault, records)
+    js_path, js_text = render_index_json(vault, records, generated)
+
+    # generated 시각만 달라진 경우는 변경으로 치지 않는다 (멱등성 유지)
+    js_changed = True
+    if os.path.isfile(js_path):
+        try:
+            with open(js_path, "r", encoding="utf-8") as fh:
+                prev = json.load(fh)
+            probe = json.loads(js_text)
+            prev.pop("generated", None)
+            probe.pop("generated", None)
+            js_changed = prev != probe
+        except (IOError, OSError, ValueError):
+            js_changed = True
+
+    md_wrote = write_if_changed(md_path, md_text, args.dry_run)
+    js_wrote = js_changed and write_if_changed(js_path, js_text, args.dry_run)
+
+    inferred = sum(1 for r in records if r["inferred"])
+    hosts = sorted({r["host"] for r in records})
+    if not args.quiet:
+        log("vault      %s" % vault)
+        log("기록       %d개 (추정 %d개)" % (len(records), inferred))
+        log("호스트     %s" % (", ".join(hosts) or "-"))
+    tag = "[모의] " if args.dry_run else ""
+    log("%sINDEX.md   %s" % (tag, "갱신" if md_wrote else "변경 없음"))
+    log("%sindex.json %s" % (tag, "갱신" if js_wrote else "변경 없음"))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

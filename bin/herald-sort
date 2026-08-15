@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""herald-sort — `_inbox/` 로 들어온 회수분을 vault 제자리로 옮긴다.
+
+  이것이 없으면 일반 호스트의 기록이 `_inbox` 에 머물러 **검색 대상이 되지 못한다.**
+
+  옮기는 규칙
+    payload/sessions/*.md   → sessions/{YYYY}/{MM}/     (날짜는 프론트매터 started → 파일명 → 꾸러미 시각 순)
+    payload/handover/…      → handover/{host}/…
+    payload/memory/{slug}/… → memory/{slug}/…           (slug→프로젝트 대응은 추정하지 않는다)
+    payload/env/…           → env/{host}/…
+    payload/raw/…           → 건너뜀 (원문은 herald-vault-raw 소관)
+
+  안전 규칙
+    · **덮어쓰지 않는다.** 같은 이름이 있고 내용이 다르면 충돌로 보고하고 남겨 둔다
+    · 처리한 꾸러미는 지우지 않고 `_inbox/{host}/_done/{계통}/{시각}/` 으로 옮긴다 (DECISIONS §3.4)
+    · **기본은 모의 실행.** --apply 를 줘야 실제로 옮긴다
+
+  사용
+    herald-sort                     무엇이 어디로 갈지만 본다
+    herald-sort --apply             실제로 정리
+    herald-sort --host general-host --apply 특정 호스트만
+
+  정리 뒤에는 `herald-index` 를 돌려 색인에 반영한다. 관리 호스트에서 실행한다.
+"""
+from __future__ import print_function
+
+import argparse
+import hashlib
+import os
+import re
+import shutil
+import sys
+
+SKIP_KINDS = {"raw"}
+
+
+def log(msg):
+    sys.stdout.write("  %s\n" % msg)
+    sys.stdout.flush()
+
+
+def die(msg, code=1):
+    sys.stderr.write("herald-sort: %s\n" % msg)
+    sys.exit(code)
+
+
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def started_of(path):
+    """세션기록의 날짜를 정한다. 추정 순서를 낮추며, 없으면 None."""
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            if fh.readline().strip() == "---":
+                for line in fh:
+                    if line.strip() == "---":
+                        break
+                    if line.startswith("started:"):
+                        m = re.search(r"(\d{4})-(\d{2})-(\d{2})", line)
+                        if m:
+                            return m.group(1), m.group(2)
+    except (IOError, OSError, UnicodeDecodeError):
+        pass
+    m = re.match(r"^(\d{2})(\d{2})(\d{2})", os.path.basename(path))
+    if m:
+        return "20" + m.group(1), m.group(2)
+    return None
+
+
+def dest_for(rel, host, vault, src, stamp):
+    """꾸러미 안 상대경로를 vault 안 목적지로 옮긴다."""
+    parts = rel.replace(os.sep, "/").split("/")
+    top = parts[0] if parts else ""
+    tail = "/".join(parts[1:])
+
+    if top == "sessions":
+        ym = started_of(src)
+        if ym is None:
+            # 꾸러미 시각은 YYYYMMDDT…Z 형식이다 (herald-drop 이 붙인다)
+            ym = ((stamp[0:4], stamp[4:6]) if re.match(r"^\d{8}", stamp)
+                  else ("0000", "00"))
+        return os.path.join(vault, "sessions", ym[0], ym[1], os.path.basename(src))
+    if top == "handover":
+        return os.path.join(vault, "handover", host, tail or os.path.basename(src))
+    if top == "memory":
+        return os.path.join(vault, "memory", tail or os.path.basename(src))
+    if top == "env":
+        return os.path.join(vault, "env", host, tail or os.path.basename(src))
+    return os.path.join(vault, "_unsorted", host, rel)
+
+
+def process_bundle(vault, host, kind, stamp, bundle, apply_, stats):
+    payload = os.path.join(bundle, "payload")
+    if not os.path.isdir(payload):
+        log("  payload 없음 — 건너뜀 (%s)" % os.path.relpath(bundle, vault))
+        return False
+
+    conflicts = 0
+    for base, dirs, files in os.walk(payload):
+        dirs[:] = sorted(dirs)
+        for fn in sorted(files):
+            src = os.path.join(base, fn)
+            rel = os.path.relpath(src, payload)
+            dest = dest_for(rel, host, vault, src, stamp)
+            rel_dest = os.path.relpath(dest, vault)
+
+            if os.path.exists(dest):
+                if sha256(dest) == sha256(src):
+                    stats["dup"] += 1
+                    continue
+                log("  ⚠ 충돌 %s — 내용이 달라 남겨 둡니다" % rel_dest)
+                conflicts += 1
+                continue
+
+            log("  %s → %s" % (rel, rel_dest))
+            stats["moved"] += 1
+            if apply_:
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                shutil.copy2(src, dest)
+
+    if conflicts:
+        stats["conflict"] += conflicts
+        return False
+
+    if apply_:
+        done = os.path.join(vault, "_inbox", host, "_done", kind)
+        os.makedirs(done, exist_ok=True)
+        target = os.path.join(done, stamp)
+        if os.path.exists(target):
+            shutil.rmtree(bundle)
+        else:
+            shutil.move(bundle, target)
+    return True
+
+
+def main():
+    ap = argparse.ArgumentParser(add_help=True,
+                                 description="_inbox 회수분을 vault 제자리로")
+    ap.add_argument("--vault", default=os.environ.get(
+        "HERALD_VAULT", os.path.join(os.path.expanduser("~"), "herald-vault")))
+    ap.add_argument("--host", help="특정 호스트만")
+    ap.add_argument("--apply", action="store_true", help="실제로 옮긴다 (기본은 모의)")
+    args = ap.parse_args()
+
+    vault = os.path.abspath(os.path.expanduser(args.vault))
+    inbox = os.path.join(vault, "_inbox")
+    if not os.path.isdir(inbox):
+        die("_inbox 를 찾을 수 없습니다: %s" % inbox)
+
+    stats = {"moved": 0, "dup": 0, "conflict": 0, "bundles": 0}
+    hosts = sorted(d for d in os.listdir(inbox)
+                   if os.path.isdir(os.path.join(inbox, d)) and not d.startswith("."))
+    for host in hosts:
+        if args.host and host != args.host:
+            continue
+        host_dir = os.path.join(inbox, host)
+        for kind in sorted(os.listdir(host_dir)):
+            kdir = os.path.join(host_dir, kind)
+            if not os.path.isdir(kdir) or kind.startswith("_"):
+                continue
+            if kind in SKIP_KINDS:
+                log("%s/%s — 원문 계통은 herald-vault-raw 소관이라 건너뜁니다" % (host, kind))
+                continue
+            for stamp in sorted(os.listdir(kdir)):
+                bundle = os.path.join(kdir, stamp)
+                if not os.path.isdir(bundle):
+                    continue
+                log("%s / %s / %s" % (host, kind, stamp))
+                stats["bundles"] += 1
+                process_bundle(vault, host, kind, stamp, bundle, args.apply, stats)
+
+    log("")
+    log("꾸러미 %d개 · 옮김 %d개 · 이미 있음 %d개 · 충돌 %d개"
+        % (stats["bundles"], stats["moved"], stats["dup"], stats["conflict"]))
+    if not args.apply:
+        log("[모의] 실제로 옮기려면 --apply 를 주십시오")
+    elif stats["moved"]:
+        log("다음: herald-index 를 돌려 색인에 반영하십시오")
+    return 1 if stats["conflict"] else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
