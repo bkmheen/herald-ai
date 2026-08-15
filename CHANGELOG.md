@@ -4,6 +4,39 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며,
 버전은 [유의적 버전(SemVer)](https://semver.org/lang/ko/) `major.minor.patch` 규칙을 사용합니다(1.0.0 이전 단계).
 
+## [0.2.23] - 2026-08-16
+
+### Added
+- **herald-vault 참여 도구 3종 신설.** 세션 기록·기억·환경을 사설 Forgejo(`vault-server`)의
+  `vault/herald-vault` 로 모으는 파이프라인의 클라이언트 측이다.
+  - `bin/herald-env` — 실행 환경 스냅샷을 JSON 으로 남긴다. 머신 식별자(맥 `IOPlatformUUID`,
+    리눅스 `/etc/machine-id`)·작업 디렉토리·git 상태·Claude Code 판본/모델/플러그인/스킬/MCP/훅·
+    `CLAUDE.md` 해시·도구 판본을 담는다. **토큰·키는 이름과 존재 여부만 남기고 값은 넣지 않는다.**
+    맥(Python 3.13)·general-host(3.8) 양쪽 실행 확인, 0.29초.
+  - `bin/herald-send` — **보내지 않은 것만** 골라 투입구로 올린다. 서버에 "무엇을 갖고 있나"를
+    묻지 않고(물으면 그것이 읽기 통로가 된다) 로컬 대장 `~/.herald/sent-<계통>.json` 과 대조한다.
+    계통을 `docs`/`env`/`raw` 로 나눠 한쪽이 고장 나도 나머지가 돌게 했다. 전송 실패분은
+    `~/.herald/outbox/` 에 쌓아 다음 회차에 재전송한다. `zstd` 가 없으면 `gzip` 으로 자동 대체.
+  - `bootstrap/herald-init.sh` — 호스트를 참여시킨다. 투입구 전용 키 발급(호스트 단위 회수 가능)·
+    설정 작성·도구 설치·등록용 공개키 출력.
+  - `bootstrap/herald-host-add.sh` — 서버(vault-server)에서 호스트를 투입구에 등록한다.
+    `command="…herald-drop <host>",restrict` 형태로 넣어 **호스트 이름을 서버가 결정**하고,
+    계통(`docs`/`raw`/`env`)만 클라이언트가 고르되 화이트리스트로 검증한다.
+    회수는 `authorized_keys` 에서 해당 줄 삭제로 끝난다.
+- **`docs/vault/` 문서 3종 신설**
+  - `DECISIONS.md` — 설계 문서(바탕화면 ①②)와 달라진 실측 결과, 확정 결정과 근거, 진행 현황
+  - `RUNBOOK.md` — 실행 절차(1~4단계)·기대 출력·문제 대응표
+  - `HANDOVER.md` — 세션 인계용. 상태·다음 할 일·부딪힌 함정·자격증명 위치
+
+### Changed
+- **읽기 차단 방식을 저장소 분리에서 「업로드 전용 투입구」로 전환.** git 호스팅은
+  쓰기 권한이 읽기 권한을 포함하므로, 저장소를 호스트별로 쪼개도 「자기 기록조차 못 읽는」
+  요구를 달성할 수 없다. SSH `command=` + `restrict` 로 받기 전용 프로그램만 실행되게 하고,
+  호스트 이름은 서버가 키에 박아 위조를 막는다.
+- **전송을 파일 단위 증분으로 확정.** 실측 결과 세션 원문의 99.2%(507/511)가 종료 후 불변이라
+  바이트 단위 델타의 이득이 0.8%에 그치고, 대신 inbox 원본을 영구 보관해야 하는 의존이 생긴다.
+  「완료된 세션만 전송」 규칙과 합치면 각 파일이 평생 한 번만 전송된다.
+
 ## [0.2.22] - 2026-08-05
 
 ### Added

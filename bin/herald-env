@@ -1,0 +1,367 @@
+#!/usr/bin/env python3
+"""herald-env — 실행 환경 스냅샷을 JSON 으로 출력한다.
+
+무엇을 남기는가
+    "어떤 컴퓨터의 어떤 디렉토리가, 어떤 상태로, 어떤 스킬·프로그램을 로드해
+    작업하고 있었는가" 를 기록한다. 세션 기록(무엇을 했는가)만으로는 알 수 없는
+    실행 조건을 남겨, 나중에 재현하거나 원인을 추적할 수 있게 한다.
+
+비밀은 담지 않는다
+    토큰·키·비밀번호는 **이름과 존재 여부만** 남기고 값은 절대 넣지 않는다.
+
+호환
+    Python 3.6+ · macOS / Linux 양쪽. 플랫폼 전용 명령은 모두 가드한다.
+
+사용
+    herald-env                 # JSON 을 표준출력으로
+    herald-env -o snap.json    # 파일로
+"""
+
+import argparse
+import hashlib
+import json
+import os
+import platform
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+HOME = os.path.expanduser("~")
+CLAUDE_DIR = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(HOME, ".claude")
+
+# 이 패턴에 걸리는 이름은 값을 절대 기록하지 않는다
+SECRET_RE = re.compile(
+    r"(token|secret|password|passwd|api[_-]?key|credential|private|auth)", re.I
+)
+
+
+def run(cmd, timeout=8):
+    """명령을 실행해 stdout 을 돌려준다. 실패하면 None."""
+    try:
+        p = subprocess.run(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            timeout=timeout, check=False,
+        )
+        if p.returncode != 0:
+            return None
+        return p.stdout.decode("utf-8", "replace").strip()
+    except Exception:
+        return None
+
+
+def sha256_file(path, limit=8 * 1024 * 1024):
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            read = 0
+            while True:
+                b = f.read(65536)
+                if not b or read >= limit:
+                    break
+                read += len(b)
+                h.update(b)
+        return h.hexdigest()
+    except Exception:
+        return None
+
+
+def read_json(path):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+# ── 머신 ────────────────────────────────────────────────────────────────
+def machine_id():
+    """이름·IP 가 바뀌어도 변하지 않는 하드웨어 식별자 (설계 ①§4.7)."""
+    sysname = platform.system()
+    if sysname == "Darwin":
+        out = run(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"])
+        if out:
+            m = re.search(r'"IOPlatformUUID"\s*=\s*"([^"]+)"', out)
+            if m:
+                return m.group(1).lower()
+    else:
+        for p in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+            try:
+                with open(p) as f:
+                    v = f.read().strip()
+                    if v:
+                        return v.lower()
+            except Exception:
+                pass
+    # 하드웨어 값을 못 얻으면 무작위 ID 를 발급해 캐시한다
+    cache = os.path.join(HOME, ".herald", "machine_id")
+    try:
+        with open(cache) as f:
+            return f.read().strip()
+    except Exception:
+        pass
+    import uuid
+    v = str(uuid.uuid4())
+    try:
+        os.makedirs(os.path.dirname(cache), exist_ok=True)
+        with open(cache, "w") as f:
+            f.write(v)
+    except Exception:
+        pass
+    return v
+
+
+def addrs():
+    sysname = platform.system()
+    out = []
+    if sysname == "Darwin":
+        iface = None
+        r = run(["route", "-n", "get", "default"])
+        if r:
+            m = re.search(r"interface:\s*(\S+)", r)
+            if m:
+                iface = m.group(1)
+        if iface:
+            ip = run(["ipconfig", "getifaddr", iface])
+            if ip:
+                out.append({"ip": ip, "iface": iface})
+    else:
+        r = run(["hostname", "-I"])
+        if r:
+            for ip in r.split():
+                out.append({"ip": ip, "iface": None})
+    return out
+
+
+def os_desc():
+    sysname = platform.system()
+    if sysname == "Darwin":
+        v = run(["sw_vers", "-productVersion"]) or ""
+        n = run(["sw_vers", "-productName"]) or "macOS"
+        return ("%s %s" % (n, v)).strip()
+    try:
+        with open("/etc/os-release") as f:
+            for line in f:
+                if line.startswith("PRETTY_NAME="):
+                    return line.split("=", 1)[1].strip().strip('"')
+    except Exception:
+        pass
+    return platform.platform()
+
+
+def machine_block():
+    sysname = platform.system()
+    names = {"hostname": platform.node()}
+    if sysname == "Darwin":
+        for key, cmd in (("computer_name", "ComputerName"),
+                         ("local_host_name", "LocalHostName")):
+            v = run(["scutil", "--get", cmd])
+            if v:
+                names[key] = v
+    return {
+        "machine_id": machine_id(),
+        "platform": sysname.lower(),
+        "os": os_desc(),
+        "arch": platform.machine(),
+        "kernel": platform.release(),
+        "names": names,
+        "addrs": addrs(),
+    }
+
+
+# ── 작업 디렉토리·저장소 ─────────────────────────────────────────────────
+def work_block(cwd):
+    return {"cwd": cwd, "project_id": os.path.basename(os.path.abspath(cwd))}
+
+
+def repo_block(cwd):
+    inside = run(["git", "-C", cwd, "rev-parse", "--is-inside-work-tree"])
+    if inside != "true":
+        return None
+    status = run(["git", "-C", cwd, "status", "--porcelain"])
+    return {
+        "root": run(["git", "-C", cwd, "rev-parse", "--show-toplevel"]),
+        "remote": run(["git", "-C", cwd, "remote", "get-url", "origin"]),
+        "branch": run(["git", "-C", cwd, "branch", "--show-current"]),
+        "head": run(["git", "-C", cwd, "rev-parse", "--short", "HEAD"]),
+        "head_subject": run(["git", "-C", cwd, "log", "-1", "--pretty=%s"]),
+        "dirty": bool(status),
+        "dirty_count": len(status.splitlines()) if status else 0,
+    }
+
+
+# ── Claude Code 환경 ────────────────────────────────────────────────────
+def list_dirs(path):
+    try:
+        return sorted(d for d in os.listdir(path)
+                      if os.path.isdir(os.path.join(path, d)) and not d.startswith("."))
+    except Exception:
+        return []
+
+
+def list_files(path, suffix=""):
+    try:
+        return sorted(f for f in os.listdir(path)
+                      if f.endswith(suffix) and not f.startswith("."))
+    except Exception:
+        return []
+
+
+def redact(mapping):
+    """값에 비밀이 섞일 수 있는 항목은 이름만 남긴다."""
+    out = {}
+    for k, v in (mapping or {}).items():
+        out[k] = "<redacted>" if SECRET_RE.search(k) else v
+    return out
+
+
+def plugin_skills(enabled):
+    """플러그인이 제공하는 스킬 목록.
+
+    디렉토리를 훑지 않고 `plugins/installed_plugins.json` 의 설치 경로 명세를 읽는다.
+    (캐시·마켓플레이스 사본이 뒤섞여 있어 경로만 보고는 플러그인을 특정할 수 없다.)
+    """
+    reg = read_json(os.path.join(CLAUDE_DIR, "plugins", "installed_plugins.json")) or {}
+    out = {}
+    for name, entries in (reg.get("plugins") or {}).items():
+        if not isinstance(entries, list):
+            entries = [entries]
+        for e in entries:
+            path = e.get("installPath") if isinstance(e, dict) else None
+            if not path:
+                continue
+            skills = list_dirs(os.path.join(path, "skills"))
+            cmds = [f[:-3] for f in list_files(os.path.join(path, "commands"), ".md")]
+            if skills or cmds:
+                out[name] = {
+                    "version": e.get("version"),
+                    "enabled": name in enabled,
+                    "scope": e.get("scope"),
+                    "skills": skills,
+                    "commands": cmds,
+                }
+    return out
+
+
+def claude_block():
+    settings = read_json(os.path.join(CLAUDE_DIR, "settings.json")) or {}
+    local = read_json(os.path.join(CLAUDE_DIR, "settings.local.json")) or {}
+    hooks = settings.get("hooks", {})
+    statusline = settings.get("statusLine", {})
+    mcp = read_json(os.path.join(HOME, ".claude.json")) or {}
+    enabled = sorted(k for k, v in (settings.get("enabledPlugins") or {}).items() if v)
+    return {
+        "version": run(["claude", "--version"]),
+        "model": settings.get("model") or local.get("model"),
+        "config_dir": CLAUDE_DIR,
+        "enabled_plugins": enabled,
+        "skills_user": list_dirs(os.path.join(CLAUDE_DIR, "skills")),
+        "plugins": plugin_skills(enabled),
+        "commands": [f[:-3] for f in list_files(os.path.join(CLAUDE_DIR, "commands"), ".md")],
+        "agents": [f[:-3] for f in list_files(os.path.join(CLAUDE_DIR, "agents"), ".md")],
+        "hooks": {k: len(v) for k, v in hooks.items()} if isinstance(hooks, dict) else None,
+        "statusline": statusline.get("command") if isinstance(statusline, dict) else None,
+        "mcp_servers": sorted((mcp.get("mcpServers") or {}).keys()),
+        "settings_env": redact(settings.get("env")),
+    }
+
+
+# ── 설정 파일·도구 ──────────────────────────────────────────────────────
+def claude_md_block(cwd):
+    out = []
+    for p in (os.path.join(CLAUDE_DIR, "CLAUDE.md"),
+              os.path.join(cwd, "CLAUDE.md"),
+              os.path.join(cwd, "AGENTS.md")):
+        if os.path.isfile(p):
+            out.append({
+                "path": p,
+                "size": os.path.getsize(p),
+                "sha256": sha256_file(p),
+                "mtime": time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                       time.gmtime(os.path.getmtime(p))),
+            })
+    return out
+
+
+def env_block():
+    """관련 환경변수만. 비밀로 보이는 이름은 값을 지운다.
+
+    접두 일치는 herald·Claude 계열로 한정하고, 그 밖에는 **정확히 일치**하는
+    이름만 받는다 (TERM 접두로 TERM_SESSION_ID·TERMINFO_DIRS 까지 딸려오는 것을 막는다).
+    """
+    prefixes = ("HERALD_", "CLAUDE_", "ANTHROPIC_")
+    exact = ("LANG", "LC_ALL", "TZ", "SHELL", "TERM", "PATH")
+    out = {}
+    for k, v in os.environ.items():
+        if k.startswith(prefixes) or k in exact:
+            out[k] = "<redacted>" if SECRET_RE.search(k) else v
+    return out
+
+
+def tools_block():
+    """주요 도구의 판본. 느리거나 배너를 뿜는 도구(flutter 등)는 제외한다."""
+    specs = [
+        ("git", ["git", "--version"]),
+        ("python3", ["python3", "-V"]),
+        ("node", ["node", "--version"]),
+        ("npm", ["npm", "--version"]),
+        ("zstd", ["zstd", "--version"]),
+        ("rg", ["rg", "--version"]),
+        ("tar", ["tar", "--version"]),
+    ]
+    ver_re = re.compile(r"\d+\.\d+")
+    out = {}
+    for name, cmd in specs:
+        if shutil.which(cmd[0]) is None:
+            out[name] = None          # 없다는 사실도 환경 정보다
+            continue
+        v = run(cmd, timeout=6)
+        if not v:
+            continue
+        line = next((ln for ln in v.splitlines() if ver_re.search(ln)), v.splitlines()[0])
+        out[name] = line.strip()
+    return out
+
+
+def credentials_present():
+    """존재 여부만 남긴다. 내용은 절대 읽지 않는다."""
+    checks = {
+        "herald_vault_conf": os.path.join(HOME, ".herald", "vault.conf"),
+        "herald_drop_key": os.path.join(HOME, ".ssh", "id_herald_drop"),
+        "herald_vault_key": os.path.join(HOME, ".ssh", "id_herald_vault"),
+        "telegram_conf": os.path.join(CLAUDE_DIR, "telegram.conf"),
+    }
+    return {k: os.path.exists(v) for k, v in checks.items()}
+
+
+def main():
+    ap = argparse.ArgumentParser(description="실행 환경 스냅샷을 JSON 으로 출력")
+    ap.add_argument("-o", "--output", help="파일로 저장 (없으면 표준출력)")
+    ap.add_argument("-C", "--cwd", default=os.getcwd(), help="대상 작업 디렉토리")
+    args = ap.parse_args()
+
+    cwd = os.path.abspath(args.cwd)
+    snap = {
+        "schema": 1,
+        "captured": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "machine": machine_block(),
+        "work": work_block(cwd),
+        "repo": repo_block(cwd),
+        "claude": claude_block(),
+        "claude_md": claude_md_block(cwd),
+        "env": env_block(),
+        "tools": tools_block(),
+        "credentials_present": credentials_present(),
+    }
+    text = json.dumps(snap, ensure_ascii=False, indent=2, sort_keys=False)
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(text + "\n")
+        sys.stderr.write("환경 스냅샷 저장: %s (%d bytes)\n" % (args.output, len(text)))
+    else:
+        print(text)
+
+
+if __name__ == "__main__":
+    main()

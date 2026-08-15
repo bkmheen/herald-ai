@@ -14,3 +14,7 @@ skills/task-tracker/.cache/
 # OS
 .DS_Store
 *.swp
+
+# Python 캐시
+__pycache__/
+*.pyc

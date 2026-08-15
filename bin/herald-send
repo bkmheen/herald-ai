@@ -1,0 +1,409 @@
+#!/usr/bin/env python3
+"""herald-send — 아직 보내지 않은 것만 골라 vault 투입구로 올린다.
+
+핵심 원리
+    서버에 "무엇을 갖고 있느냐" 고 **묻지 않는다.** 물으면 그것이 곧 읽기 통로가 된다.
+    대신 자기 컴퓨터 안의 대장(`~/.herald/sent-<kind>.json`)과 대조해 판단한다.
+
+    세션 원문은 세션이 끝나면 다시 바뀌지 않으므로(실측 99.2%),
+    바이트 단위 델타 없이 **파일 단위 증분**만으로 각 파일이 평생 한 번만 전송된다.
+
+계통 (한쪽이 고장 나도 나머지는 계속 돈다)
+    docs  세션기록 MD · memory · 인계문서      (하루 수십 KB)
+    env   실행 환경 스냅샷                      (매회 신규, 수 KB)
+    raw   대화 원문 jsonl                       (하루 약 26 MB, 압축 기준)
+
+호환
+    Python 3.6+ · macOS / Linux. zstd 가 없으면 gzip 으로 자동 대체한다.
+
+사용
+    herald-send docs
+    herald-send env
+    herald-send raw
+    herald-send --all
+    herald-send docs --dry-run     실제로 보내지 않고 무엇이 갈지만 본다
+"""
+
+import argparse
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import time
+
+HOME = os.path.expanduser("~")
+HERALD = os.path.join(HOME, ".herald")
+CLAUDE_DIR = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(HOME, ".claude")
+CONF = os.path.join(HERALD, "vault.conf")
+OUTBOX = os.path.join(HERALD, "outbox")
+STAGING = os.path.join(HERALD, "staging")
+KINDS = ("docs", "env", "raw")
+
+# 진행 중인 세션 파일은 보내지 않는다 — 끝난 뒤 한 번만 보내기 위함
+ACTIVE_WINDOW_SEC = 15 * 60
+
+
+# ── 설정 ────────────────────────────────────────────────────────────────
+def load_conf():
+    """vault.conf 를 읽는다. KEY=VALUE 한 줄씩, # 는 주석."""
+    conf = {
+        "HOST_NAME": "",
+        "DROP_HOST": "",
+        "DROP_PORT": "22",
+        "DROP_USER": "hdrop",
+        "DROP_KEY": os.path.join(HOME, ".ssh", "id_herald_drop"),
+        "SEND_RAW": "1",
+    }
+    if not os.path.exists(CONF):
+        die("설정이 없습니다: %s\n  herald-init 로 호스트를 등록하십시오." % CONF)
+    with open(CONF, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            conf[k.strip()] = v.strip().strip('"').strip("'")
+    conf["DROP_KEY"] = os.path.expanduser(conf["DROP_KEY"])
+    for req in ("HOST_NAME", "DROP_HOST"):
+        if not conf[req]:
+            die("%s 가 %s 에 없습니다." % (req, CONF))
+    return conf
+
+
+def die(msg, code=1):
+    sys.stderr.write("herald-send: %s\n" % msg)
+    sys.exit(code)
+
+
+def log(msg):
+    # 진행 상황은 stdout 으로 모은다 — 파이프로 넘겨도 순서가 유지된다
+    sys.stdout.write("  %s\n" % msg)
+    sys.stdout.flush()
+
+
+# ── 대장 ────────────────────────────────────────────────────────────────
+def ledger_path(kind):
+    return os.path.join(HERALD, "sent-%s.json" % kind)
+
+
+def load_ledger(kind):
+    try:
+        with open(ledger_path(kind), "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_ledger(kind, led):
+    os.makedirs(HERALD, exist_ok=True)
+    tmp = ledger_path(kind) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(led, f, ensure_ascii=False, indent=1, sort_keys=True)
+    os.replace(tmp, ledger_path(kind))
+
+
+def sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            b = f.read(1 << 20)
+            if not b:
+                break
+            h.update(b)
+    return h.hexdigest()
+
+
+# ── 후보 수집 ───────────────────────────────────────────────────────────
+def walk_files(root, suffixes=None, skip_hidden=True):
+    out = []
+    if not os.path.isdir(root):
+        return out
+    for base, dirs, files in os.walk(root):
+        if skip_hidden:
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for fn in files:
+            if skip_hidden and fn.startswith("."):
+                continue
+            if suffixes and not fn.endswith(tuple(suffixes)):
+                continue
+            out.append(os.path.join(base, fn))
+    return out
+
+
+def candidates_docs():
+    """(절대경로, 꾸러미 안 상대경로) 목록."""
+    items = []
+    proj = os.path.join(CLAUDE_DIR, "projects")
+    if os.path.isdir(proj):
+        for slug in sorted(os.listdir(proj)):
+            mem = os.path.join(proj, slug, "memory")
+            for p in walk_files(mem, [".md"]):
+                items.append((p, os.path.join("memory", slug, os.path.relpath(p, mem))))
+    for sub in ("sessions", "handover"):
+        root = os.path.join(STAGING, sub)
+        for p in walk_files(root, [".md"]):
+            items.append((p, os.path.join(sub, os.path.relpath(p, root))))
+    return items
+
+
+def candidates_raw():
+    """대화 원문. 진행 중인 세션(최근 수정)은 제외한다."""
+    items = []
+    proj = os.path.join(CLAUDE_DIR, "projects")
+    now = time.time()
+    skipped = 0
+    for p in walk_files(proj, [".jsonl"]):
+        try:
+            if now - os.path.getmtime(p) < ACTIVE_WINDOW_SEC:
+                skipped += 1
+                continue
+        except OSError:
+            continue
+        items.append((p, os.path.join("raw", os.path.relpath(p, proj))))
+    if skipped:
+        log("진행 중으로 판단해 제외: %d개 (최근 %d분 내 수정)"
+            % (skipped, ACTIVE_WINDOW_SEC // 60))
+    return items
+
+
+def candidates_env(tmpdir):
+    """환경 스냅샷은 매번 새로 만든다 (작고, 늘 최신이어야 한다)."""
+    tool = os.path.join(os.path.dirname(os.path.abspath(__file__)), "herald-env")
+    if not os.path.exists(tool):
+        tool = shutil.which("herald-env")
+    if not tool:
+        die("herald-env 를 찾을 수 없습니다.")
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    out = os.path.join(tmpdir, "env-%s.json" % stamp)
+    r = subprocess.run([sys.executable, tool, "-o", out],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if r.returncode != 0 or not os.path.exists(out):
+        die("herald-env 실행 실패")
+    return [(out, os.path.join("env", os.path.basename(out)))]
+
+
+# ── 무엇을 보낼지 고른다 ────────────────────────────────────────────────
+def select_new(items, led):
+    """대장과 대조해 새것·바뀐 것만 고른다.
+
+    크기와 mtime 이 대장과 같으면 해시 계산을 생략한다 (빠른 경로).
+    """
+    picked, fresh = [], {}
+    hashed = 0
+    for path, rel in items:
+        try:
+            st = os.stat(path)
+        except OSError:
+            continue
+        prev = led.get(rel)
+        if prev and prev.get("size") == st.st_size and prev.get("mtime") == int(st.st_mtime):
+            continue
+        digest = sha256_file(path)
+        hashed += 1
+        if prev and prev.get("sha256") == digest:
+            # 내용은 같고 mtime 만 바뀐 경우 — 보내지 않고 대장만 갱신
+            fresh[rel] = {"sha256": digest, "size": st.st_size,
+                          "mtime": int(st.st_mtime), "sent": prev.get("sent")}
+            continue
+        picked.append((path, rel, digest, st.st_size, int(st.st_mtime)))
+    if hashed:
+        log("해시 계산: %d개" % hashed)
+    return picked, fresh
+
+
+# ── 꾸러미 ──────────────────────────────────────────────────────────────
+def compressor():
+    if shutil.which("zstd"):
+        return ["zstd", "-9", "-T0", "-q"], "zst"
+    return ["gzip", "-9"], "gz"
+
+
+def build_package(picked, kind, host, tmpdir):
+    """manifest.json + payload/ 구조의 tar 를 만들고 압축한다."""
+    comp, ext = compressor()
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    tar_path = os.path.join(tmpdir, "pkg.tar")
+    manifest = {
+        "schema": 1,
+        "host": host,
+        "kind": kind,
+        "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "compressor": comp[0],
+        "files": [{"path": rel, "sha256": d, "size": s} for _p, rel, d, s, _m in picked],
+    }
+    mpath = os.path.join(tmpdir, "manifest.json")
+    with open(mpath, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=False, indent=1)
+
+    with tarfile.open(tar_path, "w") as tf:
+        tf.add(mpath, arcname="manifest.json")
+        for path, rel, _d, _s, _m in picked:
+            # 경로 탈출 여지를 남기지 않는다 — payload/ 아래 상대경로로만 넣는다
+            arc = os.path.join("payload", rel).replace(os.sep, "/")
+            if ".." in arc.split("/") or arc.startswith("/"):
+                continue
+            tf.add(path, arcname=arc, recursive=False)
+
+    pkg = os.path.join(tmpdir, "pkg.tar." + ext)
+    with open(tar_path, "rb") as fin, open(pkg, "wb") as fout:
+        r = subprocess.run(comp, stdin=fin, stdout=fout)
+    if r.returncode != 0:
+        die("압축 실패 (%s)" % comp[0])
+    os.remove(tar_path)
+    return pkg, stamp, manifest
+
+
+def send_package(pkg, kind, conf):
+    """SSH 투입구로 올린다. 서버는 받기만 하므로 돌아오는 것은 확인 문자열뿐이다."""
+    cmd = [
+        "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+        "-o", "StrictHostKeyChecking=accept-new",
+        "-i", conf["DROP_KEY"], "-p", str(conf["DROP_PORT"]),
+        "%s@%s" % (conf["DROP_USER"], conf["DROP_HOST"]),
+        kind,                      # 서버가 화이트리스트로 검증한다
+    ]
+    with open(pkg, "rb") as f:
+        r = subprocess.run(cmd, stdin=f, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out = r.stdout.decode("utf-8", "replace").strip()
+    err = r.stderr.decode("utf-8", "replace").strip()
+    return r.returncode == 0 and out.startswith("OK"), out, err
+
+
+# ── 큐 ──────────────────────────────────────────────────────────────────
+def queue_dir(kind):
+    d = os.path.join(OUTBOX, kind)
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def enqueue(pkg, kind, stamp):
+    dst = os.path.join(queue_dir(kind), "%s%s" % (stamp, os.path.basename(pkg)[7:]))
+    shutil.move(pkg, dst)
+    return dst
+
+
+def flush_queue(kind, conf, dry):
+    """지난번에 못 보낸 꾸러미를 먼저 보낸다 (유실 없음)."""
+    d = queue_dir(kind)
+    pending = sorted(f for f in os.listdir(d) if not f.startswith("."))
+    if not pending:
+        return 0, 0
+    log("큐에 밀린 꾸러미 %d개 — 먼저 보냅니다" % len(pending))
+    sent = failed = 0
+    for fn in pending:
+        p = os.path.join(d, fn)
+        if dry:
+            log("  [모의] %s" % fn)
+            continue
+        ok, out, err = send_package(p, kind, conf)
+        if ok:
+            os.remove(p)
+            sent += 1
+            log("  ✓ %s → %s" % (fn, out))
+        else:
+            failed += 1
+            log("  ✗ %s — %s" % (fn, err or out))
+            break          # 연결이 안 되면 나머지도 안 된다
+    return sent, failed
+
+
+# ── 계통 하나 처리 ──────────────────────────────────────────────────────
+def run_kind(kind, conf, dry):
+    print("── %s ──" % kind, flush=True)
+    if kind == "raw" and conf.get("SEND_RAW", "1") != "1":
+        log("SEND_RAW=0 — 건너뜁니다")
+        return True
+
+    qs, qf = flush_queue(kind, conf, dry)
+    if qf:
+        log("큐 전송 실패 — 이번 회차를 중단합니다 (다음에 재시도)")
+        return False
+
+    tmpdir = tempfile.mkdtemp(prefix="herald-send.")
+    try:
+        if kind == "docs":
+            items = candidates_docs()
+        elif kind == "raw":
+            items = candidates_raw()
+        else:
+            items = candidates_env(tmpdir)
+        log("후보 %d개" % len(items))
+
+        led = load_ledger(kind)
+        picked, fresh = select_new(items, led)
+        if fresh:
+            led.update(fresh)
+            if not dry:
+                save_ledger(kind, led)
+            log("내용 동일(대장만 갱신): %d개" % len(fresh))
+
+        if not picked:
+            log("보낼 것 없음")
+            return True
+
+        total = sum(s for _p, _r, _d, s, _m in picked)
+        log("보낼 것 %d개 · %.1f MB" % (len(picked), total / 1048576.0))
+        for _p, rel, _d, s, _m in picked[:5]:
+            log("   %-60s %8.1f KB" % (rel[-60:], s / 1024.0))
+        if len(picked) > 5:
+            log("   … 외 %d개" % (len(picked) - 5))
+
+        pkg, stamp, _man = build_package(picked, kind, conf["HOST_NAME"], tmpdir)
+        psz = os.path.getsize(pkg)
+        log("꾸러미 %.1f MB (압축률 %.1f배)"
+            % (psz / 1048576.0, (total / psz) if psz else 0))
+
+        if dry:
+            log("[모의] 실제로 보내지 않았습니다")
+            return True
+
+        ok, out, err = send_package(pkg, kind, conf)
+        if ok:
+            log("✓ 전송 완료 — %s" % out)
+            now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            for _p, rel, d, s, m in picked:
+                led[rel] = {"sha256": d, "size": s, "mtime": m, "sent": now}
+            save_ledger(kind, led)
+            log("대장 갱신: %d개 (총 %d)" % (len(picked), len(led)))
+            return True
+        # 실패 → 큐에 적재. 대장은 갱신하지 않는다
+        q = enqueue(pkg, kind, stamp)
+        log("✗ 전송 실패 — %s" % (err or out))
+        log("큐에 적재: %s (다음 회차 재시도)" % q)
+        return False
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def main():
+    ap = argparse.ArgumentParser(description="보내지 않은 것만 vault 투입구로 올린다")
+    ap.add_argument("kinds", nargs="*", help="docs | env | raw (없으면 docs env)")
+    ap.add_argument("--all", action="store_true", help="모든 계통")
+    ap.add_argument("--dry-run", action="store_true", help="무엇이 갈지만 본다")
+    args = ap.parse_args()
+
+    bad = [k for k in args.kinds if k not in KINDS]
+    if bad:
+        die("알 수 없는 계통: %s (가능: %s)" % (", ".join(bad), ", ".join(KINDS)))
+    kinds = list(KINDS) if args.all else (args.kinds or ["docs", "env"])
+    conf = load_conf()
+    print("호스트 %s → %s@%s:%s"
+          % (conf["HOST_NAME"], conf["DROP_USER"], conf["DROP_HOST"], conf["DROP_PORT"]))
+
+    rc = 0
+    for k in kinds:
+        try:
+            if not run_kind(k, conf, args.dry_run):
+                rc = 1
+        except Exception as e:
+            sys.stdout.write("  ✗ %s 처리 중 오류: %s\n" % (k, e))
+            rc = 1
+    sys.exit(rc)
+
+
+if __name__ == "__main__":
+    main()
