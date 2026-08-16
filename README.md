@@ -208,6 +208,7 @@ EOF
 | `herald-index` | `sessions/INDEX.md`·`index.json` 재생성 (멱등) |
 | `herald-sort` | `_inbox/` 회수분을 제자리로 (관리 호스트) |
 | `herald-legacy-import` | 흩어진 옛 기록을 `sessions/_legacy/` 로 (기본 모의 실행·`--undo` 지원) |
+| `herald-host` | 호스트 대장 — 이름·IP 가 바뀌어도 같은 컴퓨터로 잇습니다 |
 | `herald-send` / `herald-env` | 투입 전송 · 환경 스냅샷 (일반 호스트) |
 
 ```bash

@@ -1,0 +1,333 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""herald-host — 호스트 대장. **이름과 주소는 바뀌어도 같은 컴퓨터로 잇는다.**
+
+  왜 필요한가
+    이름도 IP 도 정체성이 못 된다. 둘 다 바뀐다. 그래서 바뀌지 않는
+    하드웨어 식별자(machine_id)를 1차 키로 두고, 이름·주소는 **속성으로 이력만** 쌓는다.
+    → 이름이나 IP 가 바뀌어도 자동으로 같은 호스트로 이어진다.
+
+    기기를 교체해 machine_id 자체가 달라지면 도구가 알 방법이 없다.
+    **추정하지 않는다.** 사용자가 "이 둘은 같다" 고 선언하면 그때 이어 준다.
+
+  대장 위치
+    vault conventions/hosts.yaml   (비공개 저장소)
+
+  사용
+    herald-host list                          대장 전체
+    herald-host show <이름|IP|machine_id>      무엇으로 물어도 같은 호스트로 해석
+    herald-host observe                       이 컴퓨터를 관측해 대장 갱신
+    herald-host observe --scan                vault env/ 의 스냅샷을 전부 반영
+    herald-host observe --env <파일>           스냅샷 하나를 반영
+    herald-host alias <옛 machine_id> <새 machine_id> --note "기기 교체"
+
+  관측은 **더하기만** 한다 — 옛 이름·옛 주소를 지우지 않는다. 그것이 이력이다.
+  대장 입출력은 herald_hosts.py 가 맡는다 (herald-find 와 공용).
+"""
+from __future__ import print_function
+
+import argparse
+import datetime
+import glob
+import json
+import os
+import subprocess
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from herald_hosts import (  # noqa: E402  (설치 위치와 저장소 양쪽에서 나란히 있다)
+    ledger_path, load, save, names_of, ips_of, alias_ids_of, resolve,
+)
+
+
+def log(msg):
+    sys.stdout.write("  %s\n" % msg)
+    sys.stdout.flush()
+
+
+def die(msg, code=1):
+    sys.stderr.write("herald-host: %s\n" % msg)
+    sys.exit(code)
+
+
+def today():
+    return datetime.date.today().isoformat()
+
+
+def fmt_entry(e):
+    out = ["machine_id : %s" % e.get("machine_id")]
+    out.append("역할       : %s / 읽기 %s"
+               % (e.get("role") or "-", e.get("tier_read") or "-"))
+    if e.get("platform"):
+        out.append("플랫폼     : %s" % e["platform"])
+    for n in (e.get("names") or []):
+        out.append("이름       : %-20s (since %s)" % (n.get("name"), n.get("since") or "-"))
+    for a in (e.get("addrs") or []):
+        extra = a.get("iface") or a.get("net") or ""
+        out.append("주소       : %-20s (since %s%s)"
+                   % (a.get("ip"), a.get("since") or "-",
+                      (" · " + extra) if extra else ""))
+    for al in (e.get("aliases") or []):
+        out.append("옛 식별자  : %s (since %s%s)"
+                   % (al.get("machine_id"), al.get("since") or "-",
+                      (" · " + al["note"]) if al.get("note") else ""))
+    if e.get("first_seen") or e.get("last_seen"):
+        out.append("관측       : %s ~ %s" % (e.get("first_seen") or "-",
+                                             e.get("last_seen") or "-"))
+    return "\n".join("  " + l for l in out)
+
+
+# ── 관측 ────────────────────────────────────────────────────────────────
+def snapshot_here():
+    """이 컴퓨터의 스냅샷을 herald-env 로 받는다."""
+    tool = os.path.join(os.path.dirname(os.path.abspath(__file__)), "herald-env")
+    if not os.path.exists(tool):
+        die("herald-env 를 찾을 수 없습니다")
+    try:
+        out = subprocess.run([sys.executable, tool], stdout=subprocess.PIPE,
+                             stderr=subprocess.DEVNULL)
+        return json.loads(out.stdout.decode("utf-8", "replace"))
+    except (OSError, ValueError) as exc:
+        die("herald-env 실행 실패: %s" % exc)
+
+
+def observed_from(snap):
+    """스냅샷에서 대장에 넣을 것만 추린다. 없는 값은 만들지 않는다."""
+    m = (snap or {}).get("machine") or {}
+    mid = m.get("machine_id")
+    if not mid:
+        return None
+    when = (snap.get("captured") or "")[:10] or today()
+    names, seen = [], set()
+    for key in ("hostname", "local_host_name", "computer_name"):
+        v = (m.get("names") or {}).get(key)
+        if not v:
+            continue
+        if key == "hostname":
+            v = v.split(".")[0]          # foo.local → foo
+        if v not in seen:
+            seen.add(v)
+            names.append(v)
+    addrs = [(a.get("ip"), a.get("iface")) for a in (m.get("addrs") or []) if a.get("ip")]
+    return {"machine_id": mid, "when": when, "names": names,
+            "addrs": addrs, "platform": m.get("platform")}
+
+
+def merge(entries, obs, role=None, tier=None):
+    """관측값을 대장에 **더한다.** 지우지 않는다. (바뀐 것이 있으면 True)"""
+    entry = None
+    for e in entries:
+        if e.get("machine_id") == obs["machine_id"] or \
+           obs["machine_id"] in alias_ids_of(e):
+            entry = e
+            break
+
+    changed = False
+    if entry is None:
+        entry = {"machine_id": obs["machine_id"], "role": role or "general",
+                 "tier_read": tier or "none", "names": [], "addrs": [],
+                 "first_seen": obs["when"]}
+        entries.append(entry)
+        changed = True
+        log("새 호스트: %s" % obs["machine_id"])
+
+    if role and entry.get("role") != role:
+        entry["role"] = role
+        changed = True
+    if tier and entry.get("tier_read") != tier:
+        entry["tier_read"] = tier
+        changed = True
+    if obs.get("platform") and entry.get("platform") != obs["platform"]:
+        entry["platform"] = obs["platform"]
+        changed = True
+
+    known = set(names_of(entry))
+    for n in obs["names"]:
+        if n not in known:
+            entry.setdefault("names", []).append({"name": n, "since": obs["when"]})
+            known.add(n)
+            changed = True
+            log("이름 추가: %s ← %s" % (entry["machine_id"][:12], n))
+
+    known_ip = set(ips_of(entry))
+    for ip, iface in obs["addrs"]:
+        if ip not in known_ip:
+            item = {"ip": ip, "since": obs["when"]}
+            if iface:
+                item["iface"] = iface
+            entry.setdefault("addrs", []).append(item)
+            known_ip.add(ip)
+            changed = True
+            log("주소 추가: %s ← %s" % (entry["machine_id"][:12], ip))
+
+    if not entry.get("first_seen") or obs["when"] < entry["first_seen"]:
+        entry["first_seen"] = obs["when"]
+        changed = True
+    if not entry.get("last_seen") or obs["when"] > entry["last_seen"]:
+        entry["last_seen"] = obs["when"]
+        changed = True
+    return changed
+
+
+# ── 별칭 ────────────────────────────────────────────────────────────────
+def do_alias(entries, old_id, new_id, since, note):
+    """기기 교체 — 사용자가 선언한 동일성을 대장에 새긴다."""
+    if old_id == new_id:
+        die("옛 식별자와 새 식별자가 같습니다")
+
+    new_e = None
+    for e in entries:
+        if e.get("machine_id") == new_id:
+            new_e = e
+            break
+    if new_e is None:
+        new_e = {"machine_id": new_id, "role": "general", "tier_read": "none",
+                 "names": [], "addrs": [], "first_seen": since}
+        entries.append(new_e)
+        log("새 호스트 항목 생성: %s" % new_id)
+
+    old_e = None
+    for e in entries:
+        if e is not new_e and e.get("machine_id") == old_id:
+            old_e = e
+            break
+
+    if old_e is not None:
+        # 옛 항목의 이름·주소를 이력으로 물려받는다. 그래야 옛 이름으로도 찾힌다.
+        known = set(names_of(new_e))
+        for n in (old_e.get("names") or []):
+            if n.get("name") and n["name"] not in known:
+                new_e.setdefault("names", []).append(n)
+                known.add(n["name"])
+        known_ip = set(ips_of(new_e))
+        for a in (old_e.get("addrs") or []):
+            if a.get("ip") and a["ip"] not in known_ip:
+                new_e.setdefault("addrs", []).append(a)
+                known_ip.add(a["ip"])
+        for al in (old_e.get("aliases") or []):
+            new_e.setdefault("aliases", []).append(al)
+        if old_e.get("first_seen"):
+            if not new_e.get("first_seen") or old_e["first_seen"] < new_e["first_seen"]:
+                new_e["first_seen"] = old_e["first_seen"]
+        entries.remove(old_e)
+        log("옛 항목의 이름·주소를 물려받고 항목을 합쳤습니다")
+    else:
+        log("옛 항목이 대장에 없습니다 — 식별자만 별칭으로 기록합니다")
+
+    if old_id in alias_ids_of(new_e):
+        log("이미 별칭으로 등록돼 있습니다")
+        return False
+    item = {"machine_id": old_id, "since": since}
+    if note:
+        item["note"] = note
+    new_e.setdefault("aliases", []).append(item)
+    return True
+
+
+# ── main ────────────────────────────────────────────────────────────────
+def main():
+    ap = argparse.ArgumentParser(add_help=True, description="호스트 대장")
+    ap.add_argument("--vault", default=os.environ.get(
+        "HERALD_VAULT", os.path.join(os.path.expanduser("~"), "herald-vault")))
+    sub = ap.add_subparsers(dest="cmd")
+
+    sub.add_parser("list", help="대장 전체")
+
+    p_show = sub.add_parser("show", help="이름·IP·machine_id 로 조회")
+    p_show.add_argument("query")
+
+    p_obs = sub.add_parser("observe", help="관측값을 대장에 더한다")
+    p_obs.add_argument("--env", help="스냅샷 JSON 파일")
+    p_obs.add_argument("--scan", action="store_true", help="vault env/ 전부 훑는다")
+    p_obs.add_argument("--role", choices=["admin", "general"])
+    p_obs.add_argument("--tier", choices=["all", "some", "none"])
+    p_obs.add_argument("--dry-run", action="store_true")
+
+    p_al = sub.add_parser("alias", help="기기 교체 — 같은 호스트로 잇는다")
+    p_al.add_argument("old_id")
+    p_al.add_argument("new_id")
+    p_al.add_argument("--since", default=today())
+    p_al.add_argument("--note")
+    p_al.add_argument("--dry-run", action="store_true")
+
+    args = ap.parse_args()
+    if not args.cmd:
+        ap.print_help()
+        return 0
+
+    vault = os.path.abspath(os.path.expanduser(args.vault))
+    ledger = ledger_path(vault)
+    if not os.path.isdir(os.path.dirname(ledger)):
+        die("대장 디렉토리를 찾을 수 없습니다: %s" % os.path.dirname(ledger))
+    entries = load(ledger)
+
+    if args.cmd == "list":
+        log("대장 %s · 호스트 %d대" % (ledger, len(entries)))
+        for e in entries:
+            print()
+            print(fmt_entry(e))
+        return 0
+
+    if args.cmd == "show":
+        hits = resolve(entries, args.query)
+        if not hits:
+            log("찾을 수 없습니다: %s" % args.query)
+            return 1
+        if len(hits) > 1:
+            log("여러 호스트에 걸립니다 (%d대) — 아래 전부" % len(hits))
+        for e in hits:
+            print()
+            print(fmt_entry(e))
+        return 0
+
+    if args.cmd == "observe":
+        snaps = []
+        if args.scan:
+            for p in sorted(glob.glob(os.path.join(vault, "env", "*", "*.json"))):
+                try:
+                    with open(p, "r", encoding="utf-8") as fh:
+                        snaps.append(json.load(fh))
+                except (IOError, OSError, ValueError):
+                    log("건너뜀 (읽기 실패): %s" % os.path.relpath(p, vault))
+            log("스냅샷 %d개" % len(snaps))
+        elif args.env:
+            with open(os.path.expanduser(args.env), "r", encoding="utf-8") as fh:
+                snaps.append(json.load(fh))
+        else:
+            snaps.append(snapshot_here())
+
+        changed = False
+        for snap in snaps:
+            obs = observed_from(snap)
+            if obs is None:
+                log("machine_id 가 없는 스냅샷 — 건너뜁니다")
+                continue
+            if merge(entries, obs, args.role, args.tier):
+                changed = True
+
+        if not changed:
+            log("대장에 더할 것이 없습니다")
+            return 0
+        if args.dry_run:
+            log("[모의] 실제로 쓰려면 --dry-run 없이 실행하십시오")
+            return 0
+        save(ledger, entries)
+        log("대장 갱신: %s" % os.path.relpath(ledger, vault))
+        return 0
+
+    if args.cmd == "alias":
+        if not do_alias(entries, args.old_id, args.new_id, args.since, args.note):
+            return 0
+        if args.dry_run:
+            log("[모의] 실제로 쓰려면 --dry-run 없이 실행하십시오")
+            return 0
+        save(ledger, entries)
+        log("대장 갱신: %s" % os.path.relpath(ledger, vault))
+        log("이제 옛 식별자·옛 이름·옛 주소로 물어도 같은 호스트로 해석됩니다")
+        return 0
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

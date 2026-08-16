@@ -196,6 +196,7 @@ summary: "한 줄 요약 — 타임라인에 그대로 실린다"
 | `herald-find` | 검색. 로컬 clone 이 있으면 ripgrep, 없으면 API | 읽기 권한이 있는 호스트 |
 | `herald-sort` | `_inbox/<host>/` 회수분을 제자리로 | 관리 호스트 |
 | `herald-legacy-import` | 옛 기록을 `_legacy/` 로 (원본 불변·`--undo`) | 관리 호스트 |
+| `herald-host` | 호스트 대장 — 이름·주소가 바뀌어도 같은 컴퓨터로 잇는다 | 관리 호스트 |
 | `herald-send`·`herald-env` | 투입 전송·환경 스냅샷 | 일반 호스트 |
 
 ---

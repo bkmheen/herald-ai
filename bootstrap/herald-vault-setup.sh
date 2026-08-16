@@ -6,7 +6,7 @@
 #     2. install.sh 실행 (도구를 ~/.herald/bin 에 설치)
 #     3. 셸 설정에 PATH 등록 (~/.profile·~/.bashrc·~/.zshrc)
 #     4. vault 최신화 (git pull) — 이걸 빼면 서버의 회수분이 로컬에 없다
-#     5. herald-sort  : _inbox 회수분을 제자리로 (모의로 보여 준 뒤 실제 이동)
+#     5. herald-sort  : _inbox 회수분을 제자리로 + herald-host 로 호스트 대장 갱신
 #     6. herald-index : INDEX.md·index.json 재생성
 #     7. herald-find  : 결과 확인
 #     8. herald-legacy-import : 옛 기록 이관 — **--apply-legacy 를 줘야 옮긴다**
@@ -236,7 +236,7 @@ else
 fi
 
 # ── 5. _inbox 정리 ──────────────────────────────────────────────────────
-say "5. _inbox 회수분 정리 (herald-sort)"
+say "5. _inbox 회수분 정리 + 호스트 대장 갱신"
 if [ -d "$VAULT/_inbox" ]; then
   # 묻지 않으므로 모의 실행을 따로 돌리지 않는다 — 실제 실행이 같은 목록을 찍는다.
   # (--ask 일 때만 미리 보여 주고 확인을 받는다)
@@ -250,6 +250,13 @@ if [ -d "$VAULT/_inbox" ]; then
   else
     add_skipped "herald-sort --apply (사용자 보류)"
   fi
+
+  # 정리로 env/ 에 스냅샷이 자리를 잡았으니 대장을 키운다.
+  # 이름·주소는 더하기만 한다 — 기기 교체(machine_id 변경)만 사용자가 alias 로 선언한다.
+  info "호스트 대장 갱신 (herald-host)"
+  herald-host --vault "$VAULT" observe --scan || warn "스냅샷 반영 실패"
+  herald-host --vault "$VAULT" observe --role admin --tier all || warn "이 컴퓨터 관측 실패"
+  add_done "herald-host observe"
 else
   info "_inbox 가 없습니다 — 건너뜁니다"
 fi

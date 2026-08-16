@@ -30,6 +30,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import herald_tz  # noqa: E402  (설치 위치와 저장소 양쪽에서 나란히 있다)
+import herald_hosts  # noqa: E402
 
 CONF = os.path.join(os.path.expanduser("~"), ".herald", "vault.conf")
 
@@ -119,10 +120,12 @@ def load_index_api(conf):
 
 
 # ── 필터 ────────────────────────────────────────────────────────────────
-def apply_filters(records, args):
+def apply_filters(records, args, host_names=None):
+    """host_names 는 --host 질의와 **같은 호스트로 묶이는 이름 전부**다.
+    기기를 교체해 이름이 바뀌었어도 옛 이름으로 남은 기록까지 걸린다."""
     out = []
     for r in records:
-        if args.host and (r.get("host") or "").lower() != args.host.lower():
+        if args.host and (r.get("host") or "").lower() not in (host_names or set()):
             continue
         if args.project and (r.get("project") or "").lower() != args.project.lower():
             continue
@@ -282,7 +285,12 @@ def main():
                 "  · 원격 조회라면 ~/.herald/vault.conf 에 VAULT_API·VAULT_TOKEN_FILE 을 두십시오\n"
                 "  · 일반 호스트(투입 전용)는 읽기 권한이 없습니다 — 설계대로입니다")
 
-    records = apply_filters(index.get("records", []), args)
+    host_names = herald_hosts.aliases_for(vault, args.host) if args.host else None
+    if args.host and host_names and len(host_names) > 1:
+        log("── 호스트 '%s' 는 대장에서 %s 로도 불렸습니다 ──"
+            % (args.host, ", ".join(sorted(n for n in host_names
+                                           if n != args.host.lower()))))
+    records = apply_filters(index.get("records", []), args, host_names)
 
     if args.open_key:
         return do_open(vault if have_clone else None, conf,

@@ -170,7 +170,36 @@ herald-legacy-import --undo --apply                      # 되돌리기
 
 ---
 
-## 8. 찾기
+## 8. 호스트 대장
+
+이름과 IP 는 바뀐다. 그래서 대장은 **바뀌지 않는 하드웨어 식별자**(`machine_id`)를 1차 키로 두고,
+이름·주소는 이력으로만 쌓는다. `herald-host` 가 관리한다.
+
+```bash
+herald-host observe            # 이 컴퓨터를 관측해 대장에 더한다
+herald-host observe --scan     # vault env/ 의 스냅샷을 전부 반영 (다른 호스트 포함)
+herald-host list
+herald-host show <이름|IP|machine_id>
+```
+
+**관측은 더하기만 한다.** 이름이 바뀌면 새 이름이 `since` 와 함께 추가되고 옛 이름은 남는다 —
+그래야 옛 이름으로 남은 기록도 찾힌다. 설치 스크립트가 5단계에서 자동으로 돌린다.
+
+### 기기를 교체했을 때
+
+`machine_id` 자체가 달라지면 도구가 알 방법이 없다. **추정하지 않는다.**
+사용자가 선언하면 그때 과거와 미래가 한 호스트로 묶인다.
+
+```bash
+herald-host alias <옛 machine_id> <새 machine_id> --since 2027-03-01 --note "기기 교체"
+```
+
+선언 뒤에는 **옛 식별자·옛 이름·옛 주소 무엇으로 물어도** 같은 호스트로 해석되고,
+`herald-find --host <새 이름>` 이 교체 전 기록까지 함께 찾는다.
+
+---
+
+## 9. 찾기
 
 ```bash
 herald-find "검색어"
