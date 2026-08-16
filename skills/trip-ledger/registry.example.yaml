@@ -2,7 +2,8 @@
 #
 # ⛔ herald-ai 는 공개 저장소다. 시트 ID·컬렉션 ID 등 실제 식별자를 여기에 커밋하지 마라.
 #    실제 파일은 볼트에 둔다:
-#      ~/볼트상위/노트볼트/Dossier/Registry/RG_여행지출/<프로젝트키>.yaml
+#      $VAULT_ROOT/Dossier/Registry/RG_여행지출/<프로젝트키>.yaml
+#      ($VAULT_ROOT 는 ~/.herald/vault.conf 에서 설정한다)
 #    볼트는 서버 맥에서만 쓸 수 있다 (SKILL.md 0단계·§5).
 
 project_key: YYMM00-여행명-도시        # 파일명과 동일하게
