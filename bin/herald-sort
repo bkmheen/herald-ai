@@ -19,7 +19,7 @@
   사용
     herald-sort                     무엇이 어디로 갈지만 본다
     herald-sort --apply             실제로 정리
-    herald-sort --host general-host --apply 특정 호스트만
+    herald-sort --host <호스트> --apply   특정 호스트만
 
   정리 뒤에는 `herald-index` 를 돌려 색인에 반영한다. 관리 호스트에서 실행한다.
 """

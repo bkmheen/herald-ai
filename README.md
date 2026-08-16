@@ -7,7 +7,7 @@ Claude 가 응답을 끝내거나 입력을 기다릴 때마다 **모델이 직�
 각 알림에는 `ccusage` 기반 **월 누적 비용·증감률**과 **세션 소요시간**이 함께 표시됩니다.
 
 ```
-🪪 [볼트상위@42·06/20 17:16] Claude Code: 완료 ✅
+🪪 [myproject@42·06/20 17:16] Claude Code: 완료 ✅
 알림 라벨 호스트 구분 적용 완료
 …
 ⏱️ 1분 12초 | 월누적 $12.3 (+3%)
@@ -187,7 +187,7 @@ EOF
   export HERALD_LOG_DIR="$HOME/dev-logs"   # (선택) 일반 호스트에서만 설정합니다
   ```
 
-- 파일명에 **호스트가 들어갑니다** — `260816-일--admin-host--herald-ai--0930.md`.
+- 파일명에 **호스트가 들어갑니다** — `260816-일--laptop--myproject--0930.md`.
   여러 컴퓨터의 기록이 한 디렉토리에 모여도 섞이지 않습니다.
 - 문서 맨 앞에 **YAML 프론트매터**(스키마 `herald.session-record/1.0.0`)가 붙어 색인·검색·외부 참조가 됩니다.
 
@@ -196,7 +196,11 @@ EOF
 ## 🗄️ herald-vault 도구 (`bin/` → `~/.herald/bin/`)
 
 세션기록·기억·환경을 사설 Forgejo 저장소 한곳에 모으고 **가장 먼저 여기를 뒤져** 찾게 하는 도구들입니다.
-설계는 [`docs/vault/SESSION-RECORD.md`](docs/vault/SESSION-RECORD.md), 절차는 [`docs/vault/RUNBOOK.md`](docs/vault/RUNBOOK.md).
+설계 배경은 [`docs/DESIGN.md`](docs/DESIGN.md), 기록 형식은 [`docs/SESSION-RECORD.md`](docs/SESSION-RECORD.md),
+설치·운영은 [`docs/VAULT-SETUP.md`](docs/VAULT-SETUP.md).
+
+> **도구는 공개, 구성은 비공개.** 서버 주소·호스트 이름 같은 값은 이 저장소에 없습니다.
+> `config/vault.conf.example` 을 `~/.herald/vault.conf` 로 복사해 각자 채웁니다.
 
 | 도구 | 하는 일 |
 |---|---|

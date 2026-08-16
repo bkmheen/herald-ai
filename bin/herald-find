@@ -6,12 +6,12 @@
     로컬 clone 이 있으면  → ripgrep(없으면 grep) 으로 전문 검색   (빠르다)
     없으면               → Forgejo API 로 색인·파일을 받아 검색  (clone 불필요)
 
-  설계: docs/vault/SESSION-RECORD.md
+  설계: docs/SESSION-RECORD.md
 
   사용
     herald-find "투입구"                          전문 검색
     herald-find --project herald-ai --since 2026-08-01
-    herald-find --host general-host --tag 버그
+    herald-find --host <호스트> --tag 버그
     herald-find --list                            색인 타임라인만
     herald-find --open <id|경로>                  기록 내용 출력
     herald-find "검색어" --raw                    원문(대화 jsonl)까지 — 로컬 clone 전용

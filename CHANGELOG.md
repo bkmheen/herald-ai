@@ -4,6 +4,34 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며,
 버전은 [유의적 버전(SemVer)](https://semver.org/lang/ko/) `major.minor.patch` 규칙을 사용합니다(1.0.0 이전 단계).
 
+## [0.2.38] - 2026-08-16
+
+**herald-ai 는 배포되는 패키지다.** 서버 주소·호스트 이름·개인 경로는 그 패키지를 쓰는 사람의
+설정이지 패키지의 내용이 아니다. 그런데 구축 과정에서 내 환경의 값이 그대로 공개돼 있었다 —
+IP 18곳, 개인 계정·경로 19곳, 호스트 이름 142곳. 걷어낸다.
+
+### Changed
+- **구축 기록을 vault 로 이관.** `docs/vault/{HANDOVER,DECISIONS}.md` 는 패키지 설명서가 아니라
+  "내가 어떻게 깔았는가" 의 기록이라 **애초에 공개 저장소에 있을 물건이 아니었다.**
+- **`docs/vault/RUNBOOK.md` → `docs/VAULT-SETUP.md` 로 일반화.** 특정 주소를 적지 않고
+  "서버 주소를 `DROP_HOST` 에 넣으십시오" 형태로만 안내한다.
+- **`docs/vault/SESSION-RECORD.md` → `docs/SESSION-RECORD.md`**, 예시를 일반 이름으로.
+- **`herald-init.sh` 의 서버 주소 기본값 제거.** 남의 주소가 기본값이면 처음 쓰는 사람이
+  엉뚱한 곳으로 붙는다. 설정에 있으면 제안하고, 없으면 반드시 입력받는다.
+- **`herald-vault-setup.sh` 의 개인 경로 후보 제거** — `--legacy-root` 로 받는다.
+- 스크립트·커맨드·README 의 예시에서 실제 호스트 이름·경로·금액 제거.
+
+### Added
+- **`docs/DESIGN.md`** — 왜 이런 구조인가(투입구·증분·계통 분리·정체성·색인 파생)만 남긴 설계 문서.
+- **`config/vault.conf.example`** — 값을 비운 설정 표본. `config/telegram.conf.example` 로
+  자격증명을 다루던 **이미 검증된 관례**를 그대로 확장한 것이다.
+
+### Removed
+- **공개 이력에서 내부 구성 정보 제거.** 현재 파일뿐 아니라 **과거 커밋의 파일 내용과
+  커밋 메시지까지** 치환하고, `docs/vault/` 는 전 이력에서 들어냈다.
+  아직 clone 한 사람이 없어 지금이 마지막 기회였다 (사용자 판단).
+  재작성 전 번들 백업을 남겼다.
+
 ## [0.2.37] - 2026-08-16
 
 > **묶음 01 — 버전 체계 개정** (slug: `convention`)

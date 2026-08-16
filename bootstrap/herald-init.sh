@@ -8,11 +8,11 @@
 #     4. 서버에 등록할 공개키를 화면에 출력
 #
 #   하지 않는 일
-#     서버를 건드리지 않는다. 등록은 관리자가 vault-server 에서 herald-host-add.sh 로 한다.
+#     서버를 건드리지 않는다. 등록은 관리자가 vault 서버에서 herald-host-add.sh 로 한다.
 #
 #   사용
 #     bash bootstrap/herald-init.sh                    # 대화형
-#     bash bootstrap/herald-init.sh --host general-host --server <vault-server> --yes
+#     bash bootstrap/herald-init.sh --host <이 컴퓨터 이름> --server <vault 서버 주소> --yes
 set -eu
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -66,9 +66,17 @@ if [[ -z "$HOST_NAME" ]]; then
 fi
 case "$HOST_NAME" in *[!a-z0-9._-]*|'') die "호스트 이름은 소문자·숫자·.·_·- 만 됩니다: $HOST_NAME" ;; esac
 
+# 서버 주소에 기본값을 두지 않는다 — 남의 주소가 기본값이 되면 엉뚱한 곳으로 붙는다.
+# 기존 설정이 있으면 그것을 제안하고, 없으면 반드시 입력받는다.
+if [[ -z "$DROP_HOST" && -f "$CONF" ]]; then
+  DROP_HOST=$(sed -n 's/^DROP_HOST=//p' "$CONF" | head -1)
+fi
 if [[ -z "$DROP_HOST" ]]; then
-  if [[ $ASSUME_YES -eq 1 ]]; then die "--server 를 지정하십시오"
-  else read -r -p "  vault 서버 주소 [<vault-server>]: " DROP_HOST; DROP_HOST="${DROP_HOST:-<vault-server>}"; fi
+  if [[ $ASSUME_YES -eq 1 ]]; then die "--server <vault 서버 주소> 를 지정하십시오"
+  else
+    read -r -p "  vault 서버 주소 (호스트명 또는 IP): " DROP_HOST
+    [[ -n "$DROP_HOST" ]] || die "서버 주소가 필요합니다"
+  fi
 fi
 
 say "1. 도구 설치"

@@ -107,7 +107,8 @@ done
 
 # 레거시 기본 후보 — 실제로 있는 것만 쓴다. 없는 경로를 지어내지 않는다.
 if [ -z "$LEGACY_ROOTS" ]; then
-  for cand in "$HOME/Desktop" "$HOME/볼트상위/노트볼트" "$HOME/Documents"; do
+  # 개인 경로를 코드에 박지 않는다. 흔한 위치만 후보로 두고, 나머지는 --legacy-root 로 받는다.
+  for cand in "$HOME/Desktop" "$HOME/Documents"; do
     if [ -d "$cand" ]; then
       LEGACY_ROOTS="${LEGACY_ROOTS}${LEGACY_ROOTS:+$NL}$cand"
     fi
@@ -215,7 +216,7 @@ done
 
 # ── 4. vault 최신화 ─────────────────────────────────────────────────────
 # 이걸 빼먹으면 수집기가 서버에 올려 둔 회수분이 로컬에 없어 herald-sort 가 0건을 보고한다.
-# (2026-08-16 실측: _inbox/general-host 에 73개가 있는데 로컬은 비어 있었다)
+# (실측: 서버 _inbox 에 회수분이 쌓여 있는데 로컬 클론이 비어 있어 0건으로 보고했다)
 say "4. vault 최신화 (git pull)"
 if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
   if git -C "$VAULT" remote get-url origin >/dev/null 2>&1; then

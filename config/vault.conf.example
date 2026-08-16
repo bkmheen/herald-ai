@@ -1,0 +1,39 @@
+# herald-vault 참여 설정 표본
+#
+#   이 파일을 ~/.herald/vault.conf 로 복사해 값을 채우십시오.
+#   `bootstrap/herald-init.sh` 를 돌리면 대화형으로 물어보며 자동 생성됩니다.
+#
+#     cp config/vault.conf.example ~/.herald/vault.conf && chmod 600 ~/.herald/vault.conf
+#
+#   ⚠ 이 파일에는 **주소·키 경로 같은 내 환경의 값**이 들어갑니다.
+#     `~/.herald/` 는 git 에 들어가지 않습니다. 실제 값을 저장소에 커밋하지 마십시오.
+#     (herald-ai 는 공개 저장소입니다 — 도구는 공개, 내 구성은 비공개가 원칙입니다)
+
+# ── 이 컴퓨터 ────────────────────────────────────────────────────────────
+# 기록 파일명과 대장에 쓰이는 이름. 소문자·숫자·. _ - 만.
+# 비워 두면 herald-init.sh 가 `hostname -s` 로 정합니다.
+HOST_NAME=
+
+# ── 투입구 (일반 호스트 → vault 서버) ────────────────────────────────────
+# vault 서버 주소. 호스트명 또는 IP. **기본값은 없습니다 — 반드시 채우십시오.**
+DROP_HOST=
+DROP_PORT=22
+DROP_USER=hdrop
+# 투입 전용 SSH 개인키. herald-init.sh 가 발급합니다.
+DROP_KEY=$HOME/.ssh/id_herald_drop
+
+# 원문(대화 jsonl)까지 보낼 것인가. 골격이 검증된 뒤 1 로 바꿉니다.
+SEND_RAW=0
+
+# ── 표시 ────────────────────────────────────────────────────────────────
+# 기록을 **보여 줄 때** 쓸 시간대. 정렬·저장은 늘 UTC 입니다.
+#   해외 체류 중에는 셸에서 한 번만:  export HERALD_TZ=Europe/Paris
+#   명령마다 바꾸려면:                herald-find --tz local
+DISPLAY_TZ=Asia/Seoul
+
+# ── 원격 조회 (로컬 clone 이 없는 허용 호스트) ───────────────────────────
+# clone 없이 Forgejo API 로 검색할 때만 필요합니다.
+# 토큰은 이 파일에 적지 말고 별도 파일에 두고 경로만 가리킵니다 (권한 600).
+#VAULT_API=http://<vault 서버>:3000/api/v1
+#VAULT_REPO=vault/herald-vault
+#VAULT_TOKEN_FILE=$HOME/.herald/api-token

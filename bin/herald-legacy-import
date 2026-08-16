@@ -9,7 +9,7 @@
     · **기본은 모의 실행.** --apply 를 줘야 실제로 옮긴다
 
   사용
-    herald-legacy-import ~/Desktop ~/볼트상위/노트볼트       # 무엇이 옮겨질지만 본다
+    herald-legacy-import ~/Desktop ~/Documents/<옛 기록 경로>     # 무엇이 옮겨질지만 본다
     herald-legacy-import ~/Desktop --apply                        # 실제 이동
     herald-legacy-import ~/Desktop --copy --apply                 # 원본을 남기고 복사
     herald-legacy-import --undo                                   # 마지막 이동을 되돌린다

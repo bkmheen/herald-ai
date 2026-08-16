@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# 일반 호스트를 투입구에 등록한다 — vault 서버(vault-server)에서 실행
+# 일반 호스트를 투입구에 등록한다 — **vault 서버에서** 실행
 #
 #   sudo bash herald-host-add.sh <호스트이름> '<ssh 공개키 한 줄>'
-#   예) sudo bash herald-host-add.sh general-host 'ssh-ed25519 AAAA... herald-drop@general-host'
+#   예) sudo bash herald-host-add.sh laptop 'ssh-ed25519 AAAA... herald-drop@laptop'
 #
 #   공개키는 각 호스트에서 bootstrap/herald-init.sh 를 돌리면 마지막에 출력된다.
 #

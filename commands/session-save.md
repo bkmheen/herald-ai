@@ -62,7 +62,7 @@ if [ -f "$STATE" ]; then echo "=== 인계 상태 파일 발견 ==="; cat "$STATE
 
 ## 3. 파일명·위치 (herald-vault 규약)
 
-> 상세 설계는 herald-ai `docs/vault/SESSION-RECORD.md`. 이 기록은 **바탕화면이 아니라 vault 로** 모입니다.
+> 상세 설계는 herald-ai `docs/SESSION-RECORD.md`. 이 기록은 **바탕화면이 아니라 vault 로** 모입니다.
 
 ### 3.1 위치 결정 순서
 
@@ -75,7 +75,7 @@ mkdir -p "$DEST"; echo "$DEST"
 ```
 
 > ⚠ **관리 호스트에는 `HERALD_LOG_DIR` 를 설정하지 않습니다.** 설정하면 2번을 건너뛰어 vault 대신
-> staging 에 쌓입니다. 일반 호스트(general-host 등)만 설정합니다.
+> staging 에 쌓입니다. 일반 호스트(투입 전용)만 설정합니다.
 >
 > `{YYYY}/{MM}` 은 **세션 시작 날짜** 기준입니다 (여러 날에 걸치면 시작일).
 
@@ -85,7 +85,7 @@ mkdir -p "$DEST"; echo "$DEST"
 {YYMMDD}-{요일}--{호스트}--{작업디렉토리 basename}{·필터범위}--{HHMM}.md
 ```
 
-- 예: `260816-일--admin-host--herald-ai--0930.md`
+- 예: `260816-일--워크스테이션--myproject--0930.md`
 - **호스트를 반드시 넣습니다.** 여러 컴퓨터의 기록이 한 디렉토리에 모이므로, 파일명만으로 구분되어야 합니다.
   호스트 이름은 `~/.herald/vault.conf` 의 `HOST_NAME` → 없으면 `hostname -s` 로 정합니다.
 - **필터가 적용된 경우** basename 뒤에 `·{범위}` 를 덧붙입니다 — 예 `herald-ai·개발`.

@@ -5,7 +5,7 @@
     sessions/INDEX.md    사람용 통합 타임라인 (UTC 시각순)
     sessions/index.json  기계용 색인 (Atelier·Dossier 가 파싱)
 
-  설계: docs/vault/SESSION-RECORD.md
+  설계: docs/SESSION-RECORD.md
   스키마: herald.session-record/1.0.0 · herald.session-index/1.0.0
 
   이 도구는 **멱등**하다. 몇 번을 돌려도 결과가 같다.
