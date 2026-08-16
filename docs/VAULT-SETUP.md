@@ -48,7 +48,7 @@ git 호스팅에 **비공개 저장소 두 개**를 만든다.
 
 ```bash
 git clone <vault 저장소 주소> ~/herald-vault
-cd ~/Code/herald-ai && bash install.sh
+cd <herald-ai clone 경로> && bash install.sh   # 이 문서의 예시는 ~/Code/herald-ai
 export PATH="$HOME/.herald/bin:$PATH"        # 셸 설정에도 넣는다
 ```
 

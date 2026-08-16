@@ -85,7 +85,7 @@ mkdir -p "$DEST"; echo "$DEST"
 {YYMMDD}-{요일}--{호스트}--{작업디렉토리 basename}{·필터범위}--{HHMM}.md
 ```
 
-- 예: `260816-일--워크스테이션--myproject--0930.md`
+- 예: `260816-일--laptop--myproject--0930.md`
 - **호스트를 반드시 넣습니다.** 여러 컴퓨터의 기록이 한 디렉토리에 모이므로, 파일명만으로 구분되어야 합니다.
   호스트 이름은 `~/.herald/vault.conf` 의 `HOST_NAME` → 없으면 `hostname -s` 로 정합니다.
 - **필터가 적용된 경우** basename 뒤에 `·{범위}` 를 덧붙입니다 — 예 `herald-ai·개발`.
