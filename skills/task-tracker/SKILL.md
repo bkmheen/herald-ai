@@ -100,8 +100,8 @@ Stop 훅 호출 시 context 마커별 결과:
 - **런타임 루트**: `/tmp/task-tracker/<instance-id>/`  (예: `/tmp/task-tracker/claude-98166/`)
 - **인스턴스 ID**: 프로세스 트리를 거슬러 올라가 찾은 부모 `claude` 프로세스 PID 기반.
   → 훅 스크립트와 Claude 의 Bash 툴 호출이 모두 같은 claude 프로세스의 자식이므로 같은 ID 로 수렴.
-- **인스턴스 라벨**: `<디렉토리명>@<IP끝옥텟>·<세션시작 MM/DD HH:MM>` (예: `볼트상위@42·06/20 17:07`).
-  매 알림 헤더에 `🪪 [볼트상위@42·…] Claude Code: ...` 형태로 표시되어 사용자가 어느 **디렉토리·머신**의 알림인지 즉시 구분.
+- **인스턴스 라벨**: `<디렉토리명>@<IP끝옥텟>·<세션시작 MM/DD HH:MM>` (예: `myproject@42·06/20 17:07`).
+  매 알림 헤더에 `🪪 [myproject@42·…] Claude Code: ...` 형태로 표시되어 사용자가 어느 **디렉토리·머신**의 알림인지 즉시 구분.
   → 호스트명은 길어질 수 있어 로컬 IP 마지막 옥텟(최대 3자리)만 `@` 로 붙인다(2026-06-20 변경). 여러 머신에서 같은 디렉토리명을 써도 알림이 섞이지 않는다. 텔레그램 메시지·macOS 알림·채팅 한 줄 요약에 동일 적용.
   → IP 탐지: macOS `route`+`ipconfig getifaddr`, Linux `hostname -I`, 폴백 `ifconfig` 비루프백 inet.
 - **단일 출처 헬퍼**: `~/.claude/skills/task-tracker/scripts/instance-resolve.sh` (모든 스크립트가 source 함). 직접 `RUNTIME_DIR` 을 하드코딩하지 않는다.

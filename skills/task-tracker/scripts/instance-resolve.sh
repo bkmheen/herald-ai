@@ -91,7 +91,7 @@ if [[ -z "$INSTANCE_LABEL" ]]; then
 
         # IP 마지막 옥텟 접미 (다양한 시스템 구분용): "<디렉토리명>@<옥텟>"
         # 호스트명은 길어질 수 있어, 로컬 IP 의 마지막 숫자(최대 3자리)만 붙여 짧게 구분한다.
-        # 여러 머신에서 같은 디렉토리명을 써도 알림이 섞이지 않는다. (예: 볼트상위@42)
+        # 여러 머신에서 같은 디렉토리명을 써도 알림이 섞이지 않는다. (예: myproject@42)
         _tt_ip=""
         # `|| true`: route -n get default 는 macOS 전용. Linux 에서는 exit 3 을 내므로
         # pipefail 을 켠 caller 가 source 했을 때 중단되지 않도록 가드. 아래 hostname -I 폴백이 Linux 커버.

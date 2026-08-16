@@ -18,3 +18,14 @@ skills/task-tracker/.cache/
 # Python 캐시
 __pycache__/
 *.pyc
+
+# 실제 구성·자격증명 — 표본(*.example)만 커밋한다
+# config/vault.conf.example 이 스스로 복사를 안내하므로, 복사본이 실수로 잡히지 않게 막는다
+config/vault.conf
+**/vault.conf
+skills/trip-ledger/registry.yaml
+id_herald_*
+api-token
+
+# Claude Code 로컬 설정 (개인 절대경로가 들어간다 — 머신 로컬)
+.claude/settings.local.json
