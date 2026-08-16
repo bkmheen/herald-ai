@@ -25,6 +25,7 @@
 #     bash bootstrap/herald-vault-setup.sh --ask                # 단계마다 확인
 #     bash bootstrap/herald-vault-setup.sh --apply-legacy       # 옛 기록까지 이관
 #     bash bootstrap/herald-vault-setup.sh --legacy-root ~/Desktop --legacy-root ~/Documents
+#     bash bootstrap/herald-vault-setup.sh --tz Europe/Paris   # 표시 시각만 바꿔 다시 생성
 #     bash bootstrap/herald-vault-setup.sh --no-commit --no-push --no-vault-commit
 #
 #   관리 호스트(vault 클론을 가진 컴퓨터)에서 실행한다.
@@ -95,9 +96,11 @@ while [ $# -gt 0 ]; do
     --apply-legacy)  APPLY_LEGACY=1; shift ;;
     --legacy-root)   [ $# -ge 2 ] || die "--legacy-root 에 경로가 필요합니다"
                      LEGACY_ROOTS="${LEGACY_ROOTS}${LEGACY_ROOTS:+$NL}$2"; shift 2 ;;
+    --tz)            [ $# -ge 2 ] || die "--tz 에 시간대가 필요합니다"
+                     HERALD_TZ="$2"; export HERALD_TZ; shift 2 ;;
     --vault)         [ $# -ge 2 ] || die "--vault 에 경로가 필요합니다"
                      VAULT="$2"; shift 2 ;;
-    -h|--help)       sed -n '2,31p' "$SELF"; exit 0 ;;
+    -h|--help)       sed -n '2,32p' "$SELF"; exit 0 ;;
     *)               die "알 수 없는 인자: $1" ;;
   esac
 done

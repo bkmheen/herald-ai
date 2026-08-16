@@ -28,6 +28,9 @@ import re
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import herald_tz  # noqa: E402  (설치 위치와 저장소 양쪽에서 나란히 있다)
+
 CONF = os.path.join(os.path.expanduser("~"), ".herald", "vault.conf")
 
 
@@ -138,14 +141,17 @@ def apply_filters(records, args):
     return out
 
 
-def fmt(r):
+def fmt(r, tz):
     ver = r.get("versions") or {}
     vtxt = ""
     if isinstance(ver, dict) and ver.get("from"):
         vtxt = "  %s→%s" % (ver.get("from"), ver.get("to") or ver.get("from"))
     mark = " ·추정" if r.get("inferred") else ""
-    return "%s  %-10s %-16s %s%s%s" % (
-        r.get("started_utc") or "(시각 미상)   ",
+    # 정렬·필터는 UTC(started_utc)로 하고, 보여 줄 때만 현지시각으로 바꾼다.
+    when = herald_tz.fmt(r.get("started_utc"), tz,
+                         date_only=not r.get("time_known", True)) or "(시각 미상)"
+    return "%-16s  %-10s %-16s %s%s%s" % (
+        when,
         r.get("host") or "-",
         (r.get("project") or "-")[:16],
         r.get("summary") or r.get("id"),
@@ -251,6 +257,8 @@ def main():
     ap.add_argument("--since", help="YYYY-MM-DD")
     ap.add_argument("--until", help="YYYY-MM-DD")
     ap.add_argument("--no-legacy", action="store_true", help="추정 항목 제외")
+    ap.add_argument("--tz", help="표시 시간대 (예: Asia/Tokyo · Europe/Paris · UTC · local). "
+                                 "생략하면 HERALD_TZ → vault.conf DISPLAY_TZ → Asia/Seoul")
     ap.add_argument("--list", action="store_true", help="색인 타임라인만 출력")
     ap.add_argument("--open", dest="open_key", help="기록 내용 출력")
     ap.add_argument("--raw", action="store_true",
@@ -259,6 +267,7 @@ def main():
     args = ap.parse_args()
 
     conf = load_conf()
+    tz = herald_tz.resolve(args.tz)
     vault = os.path.abspath(os.path.expanduser(args.vault))
     have_clone = os.path.isdir(os.path.join(vault, "sessions"))
 
@@ -280,12 +289,14 @@ def main():
                        index.get("records", []), args.open_key)
 
     if args.list or not args.term:
-        log("── %s · 기록 %d개 ──" % (source, len(records)))
+        log("── %s · 기록 %d개 · 시각 %s ──"
+            % (source, len(records), herald_tz.label(tz)))
         for r in records[-args.limit:]:
-            log(fmt(r))
+            log(fmt(r, tz))
         return 0
 
-    log("── %s · \"%s\" ──" % (source, args.term))
+    log("── %s · \"%s\" · 시각 %s ──"
+        % (source, args.term, herald_tz.label(tz)))
     roots = ["sessions", "handover", "memory"]
     if have_clone:
         hits = grep_local(vault, args.term, roots, args.limit)
@@ -310,7 +321,7 @@ def main():
     for path in sorted(by_path):
         r = meta.get(path)
         if r:
-            log("\n%s" % fmt(r))
+            log("\n%s" % fmt(r, tz))
             log("  %s" % path)
         else:
             log("\n  %s" % path)

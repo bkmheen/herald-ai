@@ -211,6 +211,16 @@ export PATH="$HOME/.herald/bin:$PATH"
 herald-find "투입구" --project herald-ai --since 2026-08-01
 ```
 
+**시각은 한국시간(KST)으로 보여 줍니다.** 정렬·저장은 UTC 가 기준이고 표시만 바꾼 것이라,
+해외에서는 시간대를 바꿔 보면 됩니다.
+
+```bash
+herald-find --list --tz local        # 지금 있는 곳의 시각
+export HERALD_TZ=Europe/Paris        # 체류 중 — 이후 모든 명령에 적용
+```
+
+`~/.herald/vault.conf` 의 `DISPLAY_TZ` 로 기본값을 바꿀 수도 있습니다.
+
 ## 🧳 trip-ledger — 여행·출장 지출 원장
 
 여행·출장에서 나온 영수증·항공권·교통비를 **볼트 노트 → 구글시트 원장 → 구글맵 장소 목록**으로

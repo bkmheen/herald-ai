@@ -4,6 +4,27 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며,
 버전은 [유의적 버전(SemVer)](https://semver.org/lang/ko/) `major.minor.patch` 규칙을 사용합니다(1.0.0 이전 단계).
 
+## [0.2.35] - 2026-08-16
+
+### Added
+- **시각을 한국시간으로 보여 준다.** 타임라인이 UTC 라 08-16 06:22 KST 세션이 `2026-08-15T21:22Z`
+  로 표시돼, 파일명(`260816`)과 어긋나 보였다. **정렬·저장은 UTC 그대로 두고 표시만 바꾼다.**
+- **`bin/herald_tz.py` 신설** — `herald-index`·`herald-find` 가 함께 쓰는 표시 시간대 helper.
+  결정 순서: `--tz` → `HERALD_TZ` → `vault.conf` 의 `DISPLAY_TZ` → `Asia/Seoul`.
+- **해외 체류 대응.** `--tz Asia/Tokyo`·`--tz Europe/Paris` 로 그 지역 시각으로 보고,
+  `--tz local` 은 그 컴퓨터의 시스템 시간대를 따른다(노트북을 들고 이동하면 그대로 따라간다).
+  `export HERALD_TZ=…` 한 줄이면 이후 모든 명령에 적용된다.
+  `herald-vault-setup.sh --tz …` 로 `INDEX.md` 자체를 다른 시각으로 다시 만들 수도 있다.
+- `index.json` 에 **`display_tz`** 를 남긴다 — `INDEX.md` 가 어느 시각으로 쓰였는지 알린다.
+  **기계용 값은 언제나 `started_utc`(UTC)** 이므로 소비자의 해석은 달라지지 않는다.
+- `herald-init.sh` 가 `vault.conf` 에 `DISPLAY_TZ=Asia/Seoul` 을 넣는다.
+
+### Fixed
+- **시각을 모르는 기록은 날짜만 보여 준다.** 옛 파일명에서 날짜만 건진 기록은 `00:00 UTC` 로
+  채워 두었을 뿐인데, 시간대를 옮기니 **없는 시각(`09:00`)이 생겼다.** `time_known: false` 로
+  표시하고 변환 없이 날짜만 낸다 — 지어내지 않는다. (해외 시간대에서는 날짜가 하루 밀리기도 했다)
+- 알 수 없는 지역 이름을 주면 **UTC 로 물러난다.** 조용히 엉뚱한 시각을 보여 주지 않는다.
+
 ## [0.2.34] - 2026-08-16
 
 v0.2.33 로 색인을 다시 만들어 보니 **가공본 형식이 하나가 아니었다.** 26건 중 9건의 요약이

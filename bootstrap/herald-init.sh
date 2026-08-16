@@ -109,6 +109,11 @@ DROP_KEY=$KEY
 
 # 원문(jsonl)까지 보낼 것인가. 골격이 검증된 뒤 1 로 바꾼다.
 SEND_RAW=0
+
+# 기록을 **보여 줄 때** 쓸 시간대. 정렬·저장은 늘 UTC 다.
+#   해외에 있을 때는 셸에서 한 번만: export HERALD_TZ=Europe/Paris
+#   또는 명령마다: herald-find --tz local
+DISPLAY_TZ=Asia/Seoul
 EOF
 chmod 600 "$CONF"
 sed 's/^/  /' "$CONF"
