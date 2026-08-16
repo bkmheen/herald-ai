@@ -82,11 +82,20 @@ fi
 say "[4/7] vault 도구 설치 → $HERALD_BIN"
 if [ -d "$REPO_DIR/bin" ]; then
     mkdir -p "$HERALD_BIN"
+    # 실제로 설치한 것만 센다. `ls bin/` 을 그대로 찍으면 파이썬이 만든
+    # __pycache__ 까지 "설치 완료" 목록에 끼어든다.
+    _installed=""
     for _t in "$REPO_DIR/bin/"*; do
-        [ -f "$_t" ] || continue
-        install -m 755 "$_t" "$HERALD_BIN/$(basename "$_t")"
+        [ -f "$_t" ] || continue                     # __pycache__ 등 디렉토리 제외
+        _b="$(basename "$_t")"
+        case "$_b" in *.pyc) continue ;; esac
+        case "$_b" in
+            *.py) install -m 644 "$_t" "$HERALD_BIN/$_b" ;;   # 공용 모듈 (herald_tz.py)
+            *)    install -m 755 "$_t" "$HERALD_BIN/$_b" ;;   # 실행 도구
+        esac
+        _installed="$_installed $_b"
     done
-    ok "$(ls -1 "$REPO_DIR/bin" | tr '\n' ' ')설치 완료"
+    ok "설치 완료 —$_installed"
     case ":$PATH:" in
         *":$HERALD_BIN:"*) ok "PATH 에 이미 있음" ;;
         *) warn "PATH 에 없습니다. 셸 설정에 다음을 넣으십시오:"

@@ -4,6 +4,15 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며,
 버전은 [유의적 버전(SemVer)](https://semver.org/lang/ko/) `major.minor.patch` 규칙을 사용합니다(1.0.0 이전 단계).
 
+## [0.2.36] - 2026-08-16
+
+### Fixed
+- **`install.sh` 의 설치 목록에 `__pycache__` 가 끼어들었다.** 공용 모듈(`herald_tz.py`)이
+  생기면서 파이썬이 `bin/__pycache__/` 를 만드는데, 안내 문구가 `ls bin/` 을 그대로 찍고 있었다.
+  실제로 설치한 것만 세도록 고쳤다 (디렉토리·`.pyc` 는 애초에 설치되지 않았다).
+- **모듈은 실행 권한 없이 설치한다.** `herald_tz.py` 는 실행 파일이 아니라 `import` 대상이므로
+  `644` 로 둔다. 실행 도구만 `755` 다.
+
 ## [0.2.35] - 2026-08-16
 
 ### Added
