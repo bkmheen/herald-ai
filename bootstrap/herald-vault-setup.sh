@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# herald-vault-setup — v0.2.28 세션기록 파이프라인을 관리 호스트에 한 번에 올린다.
+# herald-vault-setup — 세션기록 파이프라인을 관리 호스트에 한 번에 올린다.
 #
 #   하는 일 (순서대로)
 #     1. bin/ 실행 권한 부여 → 변경이 있으면 커밋·push
@@ -115,7 +115,11 @@ if [ -z "$LEGACY_ROOTS" ]; then
   done
 fi
 
-printf '\n\033[1m── herald-vault 세션기록 파이프라인 설치 (v0.2.28) ──\033[0m\n'
+# 판본은 VERSION 파일에서 읽는다 — 스크립트에 박아 두면 이렇게 낡는다 (실제로 v0.2.28 에 굳었다)
+HERALD_VERSION=$(cat "$REPO_DIR/VERSION" 2>/dev/null | tr -d '[:space:]')
+[ -n "$HERALD_VERSION" ] || HERALD_VERSION="unknown"
+
+printf '\n\033[1m── herald-vault 세션기록 파이프라인 설치 (v%s) ──\033[0m\n' "$HERALD_VERSION"
 info "저장소  $REPO_DIR"
 info "vault   $VAULT"
 
@@ -146,12 +150,15 @@ if [ "$DO_COMMIT" -eq 1 ] && git -C "$REPO_DIR" rev-parse --git-dir >/dev/null 2
     git -C "$REPO_DIR" status --short | sed 's/^/     /'
     if confirm "커밋하시겠습니까?"; then
       git -C "$REPO_DIR" add -A
-      git -C "$REPO_DIR" commit -F - <<'EOF'
-v0.2.28 chore: bin/ 실행 권한 부여
+      # 판본을 메시지에 박지 않는다 — VERSION 에서 읽는다.
+      # 내용도 단정하지 않는다. 이 커밋에 무엇이 담기는지는 실행 시점에만 알 수 있다.
+      git -C "$REPO_DIR" commit -F - <<EOF
+v$HERALD_VERSION [setup] herald-vault-setup 이 정리한 작업 트리 변경
 
-새 도구 4종(herald-index·find·sort·legacy-import)이 100644 로 들어가 있었다.
-install.sh 는 install -m 755 로 깔므로 동작에는 지장이 없으나,
-저장소에서 직접 실행할 수 있도록 실행 권한을 맞춘다.
+herald-vault-setup.sh 가 1단계에서 bin/ 실행 권한을 맞추고, 그때 남아 있던
+작업 트리 변경을 함께 커밋했다. 담긴 파일은 아래와 같다.
+
+$(git -C "$REPO_DIR" diff --cached --name-status | sed 's/^/  /')
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 EOF

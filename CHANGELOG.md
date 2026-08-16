@@ -4,6 +4,24 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며,
 버전은 [유의적 버전(SemVer)](https://semver.org/lang/ko/) `major.minor.patch` 규칙을 사용합니다(1.0.0 이전 단계).
 
+## [0.2.42] - 2026-08-16
+
+### Fixed
+- **설치 스크립트의 판본이 `v0.2.28` 에 굳어 있었다.** 배너와 **스스로 만드는 커밋 메시지**에
+  판본을 박아 두어, 0.9.x 를 쓰는 지금도 `v0.2.28 chore: …` 라는 커밋이 생겼다.
+  이제 `VERSION` 파일에서 읽는다. 커밋 메시지 본문도 "무엇을 담았는지" 를 단정하지 않고
+  **실제 staged 목록을 그때 넣는다** — 무엇이 담기는지는 실행 시점에만 알 수 있다.
+
+### Verified
+- **`herald-host` 연동을 실제 vault 로 실증.** 설치 스크립트 5단계가 자동으로 돌아
+  대장이 관측값을 더했다 — 이 맥의 이름 2종(`맥이름A`·`맥이름B`)과
+  일반 호스트의 **VPN 주소**를 `since` 와 함께 추가했고, **기존 이름·주소와 모르는 열쇠
+  (`upload`)를 그대로 보존**했다. 서로 다른 대역의 주소 두 개가 한 호스트 아래 묶였다.
+- 그동안 하네스 차단으로 미뤄 둔 **구문 검사를 전부 통과**했다 —
+  셸 4종(`herald-vault-setup`·`herald-init`·`herald-host-add`·`install`),
+  파이썬 9종(`herald-host`·`herald_hosts`·`herald_tz`·`find`·`index`·`sort`·`legacy-import`·`send`·`env`).
+- 이력 재작성으로 갈라졌던 **일반 호스트 clone 을 재동기화**했다 (`5e5ae34` → `6992bc6`).
+
 ## [0.2.41] - 2026-08-16
 
 ### Fixed
