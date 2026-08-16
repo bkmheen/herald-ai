@@ -265,6 +265,17 @@ def collect(vault):
     return records
 
 
+def count_files(root, suffix):
+    """색인 대상은 아니지만 vault 에 무엇이 들어 있는지 보여 주기 위한 집계."""
+    if not os.path.isdir(root):
+        return 0
+    n = 0
+    for _base, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        n += sum(1 for f in files if f.endswith(suffix))
+    return n
+
+
 def first_heading(path):
     """레거시 기록의 첫 제목을 요약 대용으로 쓴다."""
     try:
@@ -386,8 +397,14 @@ def main():
     hosts = sorted({r["host"] for r in records})
     if not args.quiet:
         log("vault      %s" % vault)
-        log("기록       %d개 (추정 %d개)" % (len(records), inferred))
+        log("세션기록   %d개 (추정 %d개)" % (len(records), inferred))
         log("호스트     %s" % (", ".join(hosts) or "-"))
+        # 색인 대상은 sessions/ 뿐이다. 기억·환경은 세지만 색인하지 않는다 —
+        # 「세션기록 0개」가 vault 가 비었다는 뜻으로 오해되지 않도록 함께 보인다.
+        for label, sub, suffix in (("기억", "memory", ".md"),
+                                   ("환경", "env", ".json")):
+            log("%s       %d개 (색인 대상 아님)"
+                % (label, count_files(os.path.join(vault, sub), suffix)))
     tag = "[모의] " if args.dry_run else ""
     log("%sINDEX.md   %s" % (tag, "갱신" if md_wrote else "변경 없음"))
     log("%sindex.json %s" % (tag, "갱신" if js_wrote else "변경 없음"))

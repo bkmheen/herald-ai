@@ -6,22 +6,26 @@
 #     2. install.sh 실행 (도구를 ~/.herald/bin 에 설치)
 #     3. 셸 설정에 PATH 등록 (~/.profile·~/.bashrc·~/.zshrc)
 #     4. vault 최신화 (git pull) — 이걸 빼면 서버의 회수분이 로컬에 없다
-#     5. herald-sort  : _inbox 회수분을 제자리로 (모의 → 확인 → 실제)
+#     5. herald-sort  : _inbox 회수분을 제자리로 (모의로 보여 준 뒤 실제 이동)
 #     6. herald-index : INDEX.md·index.json 재생성
 #     7. herald-find  : 결과 확인
-#     8. herald-legacy-import : 옛 기록 이관 — **기본은 모의 실행만**
+#     8. herald-legacy-import : 옛 기록 이관 — **--apply-legacy 를 줘야 옮긴다**
+#     9. vault 커밋·push      : 정리·색인 결과를 서버에 올린다
 #
 #   안전 규칙
-#     · 되돌리기 어려운 단계(이동·커밋·push)는 **묻고 나서** 한다. --yes 로 생략 가능
-#     · 레거시 이관은 --apply-legacy 를 명시해야 실제로 옮긴다
+#     · **묻지 않고 끝까지 간다** (사용자 지시 2026-08-16). 확인을 받으려면 --ask
+#     · 자동으로 하는 것은 전부 되돌릴 수 있는 동작이다 —
+#       herald-sort 는 덮어쓰지 않고 꾸러미를 _done 으로 보존하며, 커밋은 git 이력에 남는다
+#     · **파일을 원래 자리에서 없애는 유일한 동작**인 레거시 이관만은
+#       --apply-legacy 를 명시해야 실행되고, --undo 로 되돌린다
 #     · 어느 단계를 건너뛰었는지 마지막에 요약한다
 #
 #   사용
-#     bash bootstrap/herald-vault-setup.sh
-#     bash bootstrap/herald-vault-setup.sh --yes
+#     bash bootstrap/herald-vault-setup.sh                      # 묻지 않고 끝까지
+#     bash bootstrap/herald-vault-setup.sh --ask                # 단계마다 확인
+#     bash bootstrap/herald-vault-setup.sh --apply-legacy       # 옛 기록까지 이관
 #     bash bootstrap/herald-vault-setup.sh --legacy-root ~/Desktop --legacy-root ~/Documents
-#     bash bootstrap/herald-vault-setup.sh --yes --apply-legacy
-#     bash bootstrap/herald-vault-setup.sh --no-commit --no-push
+#     bash bootstrap/herald-vault-setup.sh --no-commit --no-push --no-vault-commit
 #
 #   관리 호스트(vault 클론을 가진 컴퓨터)에서 실행한다.
 #   일반 호스트는 vault 를 읽지 못하므로 이 스크립트가 필요하지 않다.
@@ -38,9 +42,10 @@ VAULT="${HERALD_VAULT:-$HOME/herald-vault}"
 HERALD_BIN="$HOME/.herald/bin"
 SELF="$0"
 
-ASSUME_YES=0
+ASK=0                # 기본은 묻지 않는다. --ask 로 확인을 켠다
 DO_COMMIT=1
 DO_PUSH=1
+DO_VAULT_COMMIT=1
 APPLY_LEGACY=0
 LEGACY_ROOTS=""      # 줄바꿈 구분
 DONE_STEPS=""
@@ -60,12 +65,17 @@ add_done()    { DONE_STEPS="${DONE_STEPS}${DONE_STEPS:+$NL}$1"; }
 add_skipped() { SKIPPED_STEPS="${SKIPPED_STEPS}${SKIPPED_STEPS:+$NL}$1"; }
 
 confirm() {
-  # $1 = 물음. --yes 면 무조건 진행. 대화형이 아니면 건너뛴다(자동 실행 안전).
+  # $1 = 물음. **기본은 묻지 않고 진행한다** (사용자 지시 2026-08-16).
+  #   되돌릴 수 있는 동작만 자동으로 한다 —
+  #     herald-sort  : 덮어쓰지 않고 꾸러미는 _done 으로 보존한다
+  #     커밋·push    : git 이력이 남는다
+  #     레거시 이관  : --apply-legacy 를 명시해야만 실행되고 --undo 로 되돌린다
+  #   확인을 받고 싶으면 --ask 를 준다.
   # 주의: `[ … ] && return 0` 형태를 쓰지 않는다 — 조건이 거짓이면 AND 목록 전체가
   #       실패로 끝나 set -e 가 스크립트를 죽인다.
-  if [ "$ASSUME_YES" -eq 1 ]; then return 0; fi
+  if [ "$ASK" -eq 0 ]; then return 0; fi
   if [ ! -t 0 ]; then
-    warn "대화형이 아니라 건너뜁니다 — 실행하려면 --yes 를 주십시오"
+    warn "대화형이 아니라 건너뜁니다"
     return 1
   fi
   local reply=""
@@ -77,15 +87,17 @@ confirm() {
 # ── 인자 ────────────────────────────────────────────────────────────────
 while [ $# -gt 0 ]; do
   case "$1" in
-    --yes|-y)        ASSUME_YES=1; shift ;;
+    --ask)           ASK=1; shift ;;
+    --yes|-y)        ASK=0; shift ;;          # 기본값. 옛 사용법 호환용으로 남긴다
     --no-commit)     DO_COMMIT=0; shift ;;
     --no-push)       DO_PUSH=0; shift ;;
+    --no-vault-commit) DO_VAULT_COMMIT=0; shift ;;
     --apply-legacy)  APPLY_LEGACY=1; shift ;;
     --legacy-root)   [ $# -ge 2 ] || die "--legacy-root 에 경로가 필요합니다"
                      LEGACY_ROOTS="${LEGACY_ROOTS}${LEGACY_ROOTS:+$NL}$2"; shift 2 ;;
     --vault)         [ $# -ge 2 ] || die "--vault 에 경로가 필요합니다"
                      VAULT="$2"; shift 2 ;;
-    -h|--help)       sed -n '2,27p' "$SELF"; exit 0 ;;
+    -h|--help)       sed -n '2,31p' "$SELF"; exit 0 ;;
     *)               die "알 수 없는 인자: $1" ;;
   esac
 done
@@ -285,6 +297,45 @@ else
   fi
 fi
 
+# ── 9. vault 커밋·push ──────────────────────────────────────────────────
+# 정리·색인 결과가 로컬에만 남으면 다른 컴퓨터에서 찾을 수 없다. 여기까지가 한 벌이다.
+say "9. vault 커밋·push"
+if [ "$DO_VAULT_COMMIT" -eq 0 ]; then
+  add_skipped "vault 커밋 (--no-vault-commit)"
+elif ! git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
+  info "git 저장소가 아닙니다 — 건너뜁니다"
+elif [ -z "$(git -C "$VAULT" status --porcelain)" ]; then
+  ok "변경 없음"
+else
+  git -C "$VAULT" status --short | head -20 | sed 's/^/     /'
+  vault_n=$(git -C "$VAULT" status --porcelain | wc -l | tr -d ' ')
+  info "변경 $vault_n 건"
+  if confirm "vault 에 커밋하시겠습니까?"; then
+    git -C "$VAULT" add -A
+    git -C "$VAULT" commit -F - <<EOF
+chore(vault): 회수분 정리·색인 반영 ($vault_n 건)
+
+herald-sort 로 _inbox 회수분을 제자리로 옮기고 herald-index 로 색인을 다시 만들었다.
+herald-vault-setup.sh 자동 실행.
+EOF
+    ok "커밋 완료"
+    add_done "vault 커밋 ($vault_n 건)"
+    if [ "$DO_PUSH" -eq 1 ] && git -C "$VAULT" remote get-url origin >/dev/null 2>&1; then
+      if git -C "$VAULT" push; then
+        ok "push 완료"
+        add_done "vault push"
+      else
+        warn "push 실패 — 나중에 직접 push 하십시오"
+        add_skipped "vault push (실패)"
+      fi
+    else
+      add_skipped "vault push (--no-push 또는 remote 없음)"
+    fi
+  else
+    add_skipped "vault 커밋 (사용자 보류)"
+  fi
+fi
+
 # ── 요약 ────────────────────────────────────────────────────────────────
 say "요약"
 if [ -n "$DONE_STEPS" ]; then
@@ -307,7 +358,7 @@ cat <<EOF
      herald-find --project herald-ai --since 2026-08-01
      herald-find --open <id>
 
-   vault 는 git 저장소입니다. 새로 들어온 기록의 커밋·push 는 직접 하십시오:
+   상태 확인:
 
      git -C "$VAULT" status --short
 EOF
