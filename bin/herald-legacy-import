@@ -95,12 +95,17 @@ def save_manifest(path, data):
     os.replace(tmp, path)
 
 
-def unique_dest(dest_dir, name):
-    """이름이 겹치면 ' (2)' 를 붙인다 — 덮어쓰지 않는다."""
+def unique_dest(dest_dir, name, taken):
+    """이름이 겹치면 ' (2)' 를 붙인다 — 덮어쓰지 않는다.
+
+    `taken` 은 **이번 실행에서 이미 배정한** 목적지들이다. 이것이 없으면
+    같은 이름의 파일 여러 개가 모의 실행에서 전부 같은 목적지로 보여
+    사용자가 실제 결과와 다른 것을 보고 판단하게 된다.
+    """
     stem, ext = os.path.splitext(name)
     cand = os.path.join(dest_dir, name)
     n = 2
-    while os.path.exists(cand):
+    while os.path.exists(cand) or cand in taken:
         cand = os.path.join(dest_dir, "%s (%d)%s" % (stem, n, ext))
         n += 1
     return cand
@@ -173,17 +178,27 @@ def main():
     batch = utcnow().strftime("%Y%m%dT%H%M%SZ")
     now = utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    planned, skipped = [], 0
+    # 목적지는 **계획 단계에서** 정한다. 그래야 모의 실행이 실제 결과와 같아진다.
+    planned, already, dup = [], 0, 0
+    seen_now, taken = set(), set()
     for path in found:
         digest = sha256(path)
         if digest in known:
-            skipped += 1
+            already += 1
             continue
-        known.add(digest)
-        planned.append((path, digest))
+        if digest in seen_now:
+            # 여러 경로에 같은 내용의 사본이 있다. 하나만 옮긴다.
+            dup += 1
+            continue
+        seen_now.add(digest)
+        dest = unique_dest(legacy, os.path.basename(path), taken)
+        taken.add(dest)
+        planned.append((path, digest, dest))
 
-    log("찾음 %d개 · 이미 이관됨 %d개 · 옮길 것 %d개"
-        % (len(found), skipped, len(planned)))
+    log("찾음 %d개 · 이미 이관됨 %d개 · 같은 내용 사본 %d개 · 옮길 것 %d개"
+        % (len(found), already, dup, len(planned)))
+    if dup:
+        log("  (같은 내용이 여러 경로에 있으면 하나만 옮깁니다 — sha256 으로 판정)")
     if not planned:
         return 0
 
@@ -191,8 +206,7 @@ def main():
         os.makedirs(legacy, exist_ok=True)
 
     mode = "copy" if args.copy else "move"
-    for path, digest in planned:
-        dest = unique_dest(legacy, os.path.basename(path))
+    for path, digest, dest in planned:
         log("%s → %s" % (path, os.path.relpath(dest, vault)))
         if not args.apply:
             continue

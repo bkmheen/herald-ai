@@ -5,10 +5,11 @@
 #     1. bin/ 실행 권한 부여 → 변경이 있으면 커밋·push
 #     2. install.sh 실행 (도구를 ~/.herald/bin 에 설치)
 #     3. 셸 설정에 PATH 등록 (~/.profile·~/.bashrc·~/.zshrc)
-#     4. herald-sort  : _inbox 회수분을 제자리로 (모의 → 확인 → 실제)
-#     5. herald-index : INDEX.md·index.json 재생성
-#     6. herald-find  : 결과 확인
-#     7. herald-legacy-import : 옛 기록 이관 — **기본은 모의 실행만**
+#     4. vault 최신화 (git pull) — 이걸 빼면 서버의 회수분이 로컬에 없다
+#     5. herald-sort  : _inbox 회수분을 제자리로 (모의 → 확인 → 실제)
+#     6. herald-index : INDEX.md·index.json 재생성
+#     7. herald-find  : 결과 확인
+#     8. herald-legacy-import : 옛 기록 이관 — **기본은 모의 실행만**
 #
 #   안전 규칙
 #     · 되돌리기 어려운 단계(이동·커밋·push)는 **묻고 나서** 한다. --yes 로 생략 가능
@@ -84,7 +85,7 @@ while [ $# -gt 0 ]; do
                      LEGACY_ROOTS="${LEGACY_ROOTS}${LEGACY_ROOTS:+$NL}$2"; shift 2 ;;
     --vault)         [ $# -ge 2 ] || die "--vault 에 경로가 필요합니다"
                      VAULT="$2"; shift 2 ;;
-    -h|--help)       sed -n '2,30p' "$SELF"; exit 0 ;;
+    -h|--help)       sed -n '2,27p' "$SELF"; exit 0 ;;
     *)               die "알 수 없는 인자: $1" ;;
   esac
 done
@@ -197,8 +198,29 @@ for rc in "$HOME/.profile" "$HOME/.bashrc" "$HOME/.zshrc"; do
 done
 [ "$rc_touched" -gt 0 ] || warn "셸 설정을 찾지 못했습니다 — 직접 넣으십시오: $PATH_LINE"
 
-# ── 4. _inbox 정리 ──────────────────────────────────────────────────────
-say "4. _inbox 회수분 정리 (herald-sort)"
+# ── 4. vault 최신화 ─────────────────────────────────────────────────────
+# 이걸 빼먹으면 수집기가 서버에 올려 둔 회수분이 로컬에 없어 herald-sort 가 0건을 보고한다.
+# (2026-08-16 실측: _inbox/general-host 에 73개가 있는데 로컬은 비어 있었다)
+say "4. vault 최신화 (git pull)"
+if git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; then
+  if git -C "$VAULT" remote get-url origin >/dev/null 2>&1; then
+    if git -C "$VAULT" pull --ff-only; then
+      ok "최신 상태"
+      add_done "vault pull"
+    else
+      warn "pull 실패 — 로컬 변경이나 충돌이 있는지 확인하십시오"
+      warn "이대로 진행하면 서버의 회수분이 빠진 채로 정리·색인됩니다"
+      add_skipped "vault pull (실패)"
+    fi
+  else
+    info "remote 가 없습니다 — 건너뜁니다"
+  fi
+else
+  info "git 저장소가 아닙니다 — 건너뜁니다"
+fi
+
+# ── 5. _inbox 정리 ──────────────────────────────────────────────────────
+say "5. _inbox 회수분 정리 (herald-sort)"
 if [ -d "$VAULT/_inbox" ]; then
   info "먼저 모의 실행으로 무엇이 어디로 갈지 봅니다."
   sort_rc=0
@@ -216,17 +238,17 @@ else
   info "_inbox 가 없습니다 — 건너뜁니다"
 fi
 
-# ── 5. 색인 ─────────────────────────────────────────────────────────────
-say "5. 색인 재생성 (herald-index)"
+# ── 6. 색인 ─────────────────────────────────────────────────────────────
+say "6. 색인 재생성 (herald-index)"
 herald-index --vault "$VAULT"
 add_done "herald-index"
 
-# ── 6. 확인 ─────────────────────────────────────────────────────────────
-say "6. 확인 (herald-find)"
+# ── 7. 확인 ─────────────────────────────────────────────────────────────
+say "7. 확인 (herald-find)"
 herald-find --vault "$VAULT" --list || true
 
-# ── 7. 레거시 이관 ──────────────────────────────────────────────────────
-say "7. 과거 기록 이관 (herald-legacy-import)"
+# ── 8. 레거시 이관 ──────────────────────────────────────────────────────
+say "8. 과거 기록 이관 (herald-legacy-import)"
 if [ -z "$LEGACY_ROOTS" ]; then
   warn "찾을 경로가 없습니다 — --legacy-root 로 지정하십시오"
   add_skipped "레거시 이관 (경로 없음)"
