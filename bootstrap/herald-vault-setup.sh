@@ -234,14 +234,14 @@ fi
 # ── 5. _inbox 정리 ──────────────────────────────────────────────────────
 say "5. _inbox 회수분 정리 (herald-sort)"
 if [ -d "$VAULT/_inbox" ]; then
-  info "먼저 모의 실행으로 무엇이 어디로 갈지 봅니다."
-  sort_rc=0
-  herald-sort --vault "$VAULT" || sort_rc=$?
-  if [ "$sort_rc" -ne 0 ]; then
-    warn "충돌이 있습니다 — 덮어쓰지 않고 남겨 두었습니다. 위 목록을 확인하십시오"
+  # 묻지 않으므로 모의 실행을 따로 돌리지 않는다 — 실제 실행이 같은 목록을 찍는다.
+  # (--ask 일 때만 미리 보여 주고 확인을 받는다)
+  if [ "$ASK" -eq 1 ]; then
+    info "먼저 모의 실행으로 무엇이 어디로 갈지 봅니다."
+    herald-sort --vault "$VAULT" || warn "충돌이 있습니다 — 덮어쓰지 않고 남겨 둡니다"
   fi
   if confirm "실제로 정리하시겠습니까? (덮어쓰지 않고, 꾸러미는 _done 으로 보존됩니다)"; then
-    herald-sort --vault "$VAULT" --apply || warn "일부 충돌이 남았습니다"
+    herald-sort --vault "$VAULT" --apply || warn "일부 충돌이 남았습니다 — 덮어쓰지 않았습니다"
     add_done "herald-sort --apply"
   else
     add_skipped "herald-sort --apply (사용자 보류)"
@@ -276,8 +276,11 @@ else
   set -- $LEGACY_ROOTS
   set +f; IFS="$old_ifs"
 
-  info "먼저 모의 실행합니다 — 파일은 움직이지 않습니다."
-  herald-legacy-import --vault "$VAULT" "$@" || true
+  # --apply-legacy 면 실제 실행이 같은 목록을 찍으므로 모의 실행을 겹쳐 돌리지 않는다.
+  if [ "$APPLY_LEGACY" -eq 0 ] || [ "$ASK" -eq 1 ]; then
+    info "먼저 모의 실행합니다 — 파일은 움직이지 않습니다."
+    herald-legacy-import --vault "$VAULT" "$@" || true
+  fi
 
   if [ "$APPLY_LEGACY" -eq 1 ]; then
     if confirm "위 목록을 sessions/_legacy/ 로 **이동**하시겠습니까? (원본 위치에서 사라집니다)"; then

@@ -94,22 +94,38 @@ def _scalar(raw):
 
 
 def parse_frontmatter(path):
-    """맨 앞 --- 블록을 사전으로 돌려준다. 없으면 None."""
+    """맨 앞 --- 블록을 사전으로 돌려준다. 없으면 None.
+
+    우리 규약(§2.1)은 한 줄 값만 쓰지만, **Atelier·Dossier 가공본**은
+    `tags:` 아래에 `- 항목` 을 늘어놓는 블록 목록을 쓴다. 그것도 읽어 준다.
+    """
     try:
         with open(path, "r", encoding="utf-8") as fh:
             first = fh.readline()
             if first.strip() != "---":
                 return None
             data = {}
+            pending = None            # 블록 목록을 받는 중인 열쇠
             for line in fh:
                 if line.strip() == "---":
                     return data
-                if not line.strip() or line.lstrip().startswith("#"):
+                stripped = line.strip()
+                if not stripped:
                     continue
-                if ":" not in line:
+                if stripped.startswith("- ") and pending:
+                    data[pending].append(_scalar(stripped[2:]))
+                    continue
+                pending = None
+                if stripped.startswith("#") or ":" not in line:
                     continue
                 key, _, val = line.partition(":")
-                data[key.strip()] = _scalar(val)
+                key = key.strip()
+                if val.strip() == "":
+                    # 다음 줄부터 블록 목록일 수 있다. 아니면 그대로 None 이 된다.
+                    pending = key
+                    data[key] = []
+                else:
+                    data[key] = _scalar(val)
             return None  # 닫히지 않은 블록은 프론트매터로 보지 않는다
     except (IOError, OSError, UnicodeDecodeError):
         return None
@@ -146,7 +162,10 @@ def to_utc(value):
 
 # ── 파일명 추정 (프론트매터가 없는 기록 = 레거시) ────────────────────────
 NEW_NAME_RE = re.compile(r"^(\d{6})-(.+?)--(.+?)--(.+?)--(\d{4})$")
-LEGACY_RE = re.compile(r"^(\d{6})-(.)\s*\[([^\]]*)\]-(\d{4})\s*세션\s*작업기록")
+# 대괄호 뒤에 -HHMM 이 없거나(`… [pension-jsf·개발·버그] 세션 작업기록`),
+# 그 뒤에 다른 말이 붙는 경우(`…-0855 improve 미완 노트 처리계획 세션 작업기록`)가 실재한다.
+# 규약이 느슨했으므로 파서도 느슨하게 둔다 — 대괄호 안만 확실히 건진다.
+LEGACY_RE = re.compile(r"^(\d{6})-(\S)\s*\[([^\]]*)\]")
 
 
 def _yymmdd(s):
@@ -177,7 +196,7 @@ def infer_from_name(stem):
 
     m = LEGACY_RE.match(stem)
     if m:
-        day, _dow, subject, _tail = m.groups()
+        day, _dow, subject = m.groups()
         date = _yymmdd(day)
         if "·" in subject:
             subject, _, filt = subject.partition("·")
@@ -221,6 +240,7 @@ def collect(vault):
                     "id": fm.get("id") or stem,
                     "path": rel,
                     "schema": fm.get("schema"),
+                    "foreign_schema": None,
                     "host": fm.get("host") or "unknown",
                     "machine_id": fm.get("machine_id"),
                     "project": fm.get("project"),
@@ -236,23 +256,34 @@ def collect(vault):
                     "inferred": False,
                 }
             else:
+                # 우리 규약이 아닌 기록(레거시·Atelier/Dossier 가공본).
+                # 파일명에서 뽑을 수 있는 것만 뽑고, **남의 프론트매터가 있으면
+                # 거기 적힌 사실을 쓴다** — 지어내지 않고 있는 것을 읽는다.
                 guess = infer_from_name(stem)
+                fm = fm or {}
+                started = (fm.get("event_date") or fm.get("created")
+                           or guess["started"])
+                if started and len(str(started)) == 10:
+                    started = "%sT00:00:00" % started
+                tags = fm.get("tags")
                 rec = {
                     "id": stem,
                     "path": rel,
                     "schema": None,
+                    "foreign_schema": fm.get("type"),
                     "host": guess["host"],
                     "machine_id": None,
                     "project": guess["project"],
                     "cwd": None,
                     "branch": None,
-                    "started": guess["started"],
+                    "started": started,
                     "ended": None,
-                    "tags": [],
+                    "tags": tags if isinstance(tags, list) else [],
                     "versions": {},
                     "commits": [],
                     "filter": guess["filter"],
-                    "summary": first_heading(path) or stem,
+                    "summary": (fm.get("source_name") or fm.get("title")
+                                or first_heading(path) or stem),
                     "inferred": True,
                 }
 
@@ -276,15 +307,25 @@ def count_files(root, suffix):
 
 
 def first_heading(path):
-    """레거시 기록의 첫 제목을 요약 대용으로 쓴다."""
+    """레거시 기록의 첫 제목을 요약 대용으로 쓴다.
+
+    프론트매터 블록은 건너뛴다 — 가공본은 앞머리 20여 줄이 전부 메타데이터라
+    그냥 세면 제목에 닿지 못한다.
+    """
     try:
         with open(path, "r", encoding="utf-8") as fh:
-            for _ in range(20):
+            line = fh.readline()
+            if line.strip() == "---":
+                for line in fh:                      # 닫는 --- 까지 버린다
+                    if line.strip() == "---":
+                        break
                 line = fh.readline()
+            for _ in range(60):
                 if not line:
                     break
                 if line.startswith("# "):
                     return line[2:].strip()
+                line = fh.readline()
     except (IOError, OSError, UnicodeDecodeError):
         pass
     return None
