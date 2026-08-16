@@ -4,6 +4,23 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며,
 버전은 [유의적 버전(SemVer)](https://semver.org/lang/ko/) `major.minor.patch` 규칙을 사용합니다(1.0.0 이전 단계).
 
+## [0.2.29] - 2026-08-16
+
+### Added
+- **`bootstrap/herald-vault-setup.sh`** — v0.2.28 파이프라인을 관리 호스트에 **한 번에** 올린다.
+  실행 권한 부여·커밋·push → `install.sh` → 셸 PATH 등록 → `herald-sort` → `herald-index`
+  → `herald-find` 확인 → 레거시 이관(모의)까지 순서대로 수행하고 마지막에 요약한다.
+  - 되돌리기 어려운 단계(이동·커밋·push)는 **묻고 나서** 한다. `--yes` 로 생략, 비대화형이면 자동 보류
+  - 레거시 이관은 `--apply-legacy` 를 명시해야 실제로 옮긴다
+  - `--legacy-root` 를 주지 않으면 **실재하는 경로만** 후보로 삼는다 (없는 경로를 지어내지 않는다)
+
+### Fixed
+- 셸 호환 함정 두 가지를 처음부터 피해 작성했다.
+  - **배열을 쓰지 않는다** — macOS 기본 bash 3.2 는 `set -u` 에서 빈 배열을 펼치면
+    `unbound variable` 로 죽는다. 줄바꿈 구분 문자열 + 위치인자로 처리한다
+  - **`[ … ] && cmd` 를 문장 단위로 쓰지 않는다** — 조건이 거짓이면 AND 목록 전체가 실패로 끝나
+    `set -e` 가 스크립트를 조용히 죽인다. `if … then … fi` 로 바꿨다
+
 ## [0.2.28] - 2026-08-16
 
 세션기록을 **바탕화면이 아니라 herald-vault 로** 모은다. 무엇을 찾든 vault 를 가장 먼저 뒤지면 나온다.
