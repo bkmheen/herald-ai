@@ -85,6 +85,27 @@ herald-ai 의 커밋 트레일러는 `Co-Authored-By` 한 줄만 둔다.
 "이건 패키지의 일부인가, 내 구성인가" 를 먼저 판정했다면 애초에 섞이지 않았다.
 치환은 사후 수습일 뿐이다.
 
+### 함정 — filter-repo 뒤 `git pull` 이 죽는다
+
+`git-filter-repo` 는 안전장치로 **origin 리모트를 제거**한다. 재작성 스크립트가
+`git remote add origin …` 로 되살렸는데도, 그 다음 `git pull` 이 이렇게 멈췄다.
+
+```
+현재 브랜치에 추적 정보가 없습니다.
+```
+
+**리모트를 되살리는 것과 브랜치 추적을 되살리는 것은 다른 일이다.**
+`git remote add` 는 `branch.<이름>.remote`·`branch.<이름>.merge` 를 세우지 않는다.
+push 는 `git push origin main` 처럼 대상을 명시해 성공했으므로 한동안 드러나지 않았다.
+
+```bash
+git config branch.main.remote origin
+git config branch.main.merge  refs/heads/main
+# 또는  git fetch origin && git branch --set-upstream-to=origin/main main
+```
+
+이력을 다시 쓸 일이 있으면 **remote 복구 다음 줄에 추적 복구를 붙인다.**
+
 ---
 
 ## 2026-08-01 — trip-ledger 스킬 신설: 작업 경험의 다중 Mac 공유 (v0.2.18)

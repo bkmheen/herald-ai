@@ -4,6 +4,15 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/) 를 따르며,
 버전은 [유의적 버전(SemVer)](https://semver.org/lang/ko/) `major.minor.patch` 규칙을 사용합니다(1.0.0 이전 단계).
 
+## [0.2.41] - 2026-08-16
+
+### Fixed
+- **이력 재작성 뒤 `git pull` 이 죽던 것을 복구.** `git-filter-repo` 는 안전장치로 origin 을
+  제거하는데, 재작성 스크립트가 `git remote add` 로 리모트만 되살리고 **브랜치 추적**
+  (`branch.main.remote`·`branch.main.merge`)은 세우지 않았다. push 는 대상을 명시해 성공했으므로
+  한동안 드러나지 않았다. 함정을 `DEVLOG.md` 에 기록했다 — 이력을 다시 쓸 일이 있으면
+  리모트 복구 다음 줄에 추적 복구를 붙인다.
+
 ## [0.2.40] - 2026-08-16
 
 > **묶음 02 — 호스트 정체성** (slug: `host`)
