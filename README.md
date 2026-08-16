@@ -75,16 +75,17 @@ cd herald-ai
 bash install.sh
 ```
 
-설치 스크립트가 수행하는 6단계(모두 멱등):
+설치 스크립트가 수행하는 7단계(모두 멱등):
 
 | 단계 | 내용 |
 |------|------|
 | 1 | **의존성 점검** — 필수/권장 도구 확인 |
 | 2 | **스킬 복사** — `task-tracker`·`telegram-notify`·`trip-ledger` → `~/.claude/skills/` (개인 파일 `telegram.conf`·`task_history.jsonl`·`config` 는 보존) |
 | 3 | **커맨드 복사** — `/session-log`·`/session-save` → `~/.claude/commands/` |
-| 4 | **텔레그램 설정** — `telegram.conf` 가 없을 때만 example 에서 생성 |
-| 5 | **훅 병합** — `~/.claude/settings.json` 에 훅 추가(기존 설정 `*.bak.<epoch>` 로 백업, 우리 훅은 중복 제거 후 재삽입) |
-| 6 | **완료 안내** — 다음 단계·테스트 명령 출력 |
+| 4 | **vault 도구 설치** — `bin/` 의 `herald-*` → `~/.herald/bin/` (아래 「herald-vault 도구」 절) |
+| 5 | **텔레그램 설정** — `telegram.conf` 가 없을 때만 example 에서 생성 |
+| 6 | **훅 병합** — `~/.claude/settings.json` 에 훅 추가(기존 설정 `*.bak.<epoch>` 로 백업, 우리 훅은 중복 제거 후 재삽입) |
+| 7 | **완료 안내** — 다음 단계·테스트 명령 출력 |
 
 > `~/.claude` 가 아닌 다른 경로를 쓰려면 `CLAUDE_CONFIG_DIR=/경로 bash install.sh`.
 
@@ -289,7 +290,8 @@ bash uninstall.sh   # settings.json 의 herald 훅만 제거(스킬 보존)
 - **[VERSION](VERSION)** — 현재 버전 단일 출처.
 - **[CLAUDE.md](CLAUDE.md)** — 저장소 작업 규칙(버전·커밋·개발기록·푸시) 단일 출처. Claude Code 가 자동 로드.
 
-현재 버전: **0.2.20**
+> **현재 버전은 [`VERSION`](VERSION) 파일에서 확인합니다.** 여기에 숫자를 옮겨 적지 않습니다 —
+> 두 곳에 적으면 반드시 한쪽이 낡습니다 (실제로 두 번 낡았습니다).
 
 ## 📄 라이선스
 

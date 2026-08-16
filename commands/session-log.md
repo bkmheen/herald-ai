@@ -4,7 +4,9 @@ argument-hint: "[필터 조건 (예: 테스트를 제외한 개발 관련 업무
 ---
 
 이번 세션에서 수행한 작업을 **일자·시간 순서의 "차례"(시간별 작업 설명)** 로 정리하여 **화면에 표시**하십시오.
-**파일은 생성하지 않습니다.** (`/session-save` 가 동일 내용을 `HERALD_LOG_DIR`(기본 `~/Desktop/`) 에 저장합니다.)
+**파일은 생성하지 않습니다.** (`/session-save` 가 동일 내용을 저장합니다 — 저장 위치는
+`HERALD_LOG_DIR` → vault → `~/Desktop` 순으로 정해지며, 자세한 것은 `/session-save` 문서와
+[`docs/SESSION-RECORD.md`](../docs/SESSION-RECORD.md) 를 참조하십시오.)
 
 이 명령의 목적은 `/session-save` 로 저장될 기록의 **차례 부분을 미리 보는 것**이며, 동시에 추린 결과를 **상태 파일로 남겨 `/session-save` 가 그대로 이어받게** 하는 것입니다.
 
