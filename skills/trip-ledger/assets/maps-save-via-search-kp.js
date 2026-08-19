@@ -18,9 +18,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const title = (document.querySelector('[data-attrid="title"]') || {}).innerText || '(noKP)';
 
 // 저장 버튼: 미저장이면 "컬렉션에 저장", 저장돼 있으면 "저장됨"
-let btn = [...document.querySelectorAll('[role="button"],button,span')]
-  .find(e => /컬렉션에 저장|저장됨/.test(e.getAttribute('aria-label') || ''));
-if (!btn) throw 'no save button';
+// 라벨은 UI 언어를 따른다 — 한국어/영문 양쪽을 본다 (L-010).
+// 저장·저장됨 두 버튼이 동시에 DOM 에 있으므로 보이는 쪽을 고르고, 없으면 첫 번째로 폴백한다.
+const SAVE_RE = /컬렉션에 저장|저장됨|to collection|^Saved\b/;
+const _vis = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+const _cands = [...document.querySelectorAll('[role="button"],button,span')]
+  .filter(e => SAVE_RE.test(e.getAttribute('aria-label') || ''));
+let btn = _cands.find(_vis) || _cands[0];
+if (!btn) throw 'no save button';   // → 라벨 목록을 덤프해 언어·구조를 먼저 확인할 것 (L-010)
 
 btn.click();
 await sleep(3500);                          // 대화상자 마운트 대기 — 짧으면 행을 못 찾는다
@@ -34,7 +39,7 @@ if (before !== 'true') cb.click();          // 멱등 — 이미 저장돼 있�
 await sleep(3000);
 
 const x = [...document.querySelectorAll('[role="button"],button')]
-  .find(e => /닫기|Close/.test(e.getAttribute('aria-label') || ''));
+  .find(e => /닫기|^Close$/.test(e.getAttribute('aria-label') || '') && _vis(e));
 if (x) x.click();
 
 JSON.stringify({ title, before, after: cb.getAttribute('aria-checked') })
