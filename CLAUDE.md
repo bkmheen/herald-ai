@@ -177,6 +177,7 @@ herald-ai 는 알림 도구이면서, **clone 된 맥이 어떤 환경이어야 
 
 | 요청 | 무엇을 하는가 |
 |---|---|
+| **"새 맥이다 / 이 저장소로 환경을 맞춰라"** | **가장 먼저 `bash <repo>/bootstrap/herald-onboard.sh`** 를 돌린다. 이것 하나가 시스템 의존성 → Claude Code → herald-ai 본체 → 텔레그램 → OMC·HUD → 커밋 규약 호출어까지 **전체 순서를 점검**하고 남은 할 일을 번호로 준다. 사용자에게는 그 목록을 그대로 옮기고, 자동으로 되는 것은 확인을 받아 `--apply` 로 실행한다. **다른 명령을 먼저 제안하지 않는다** — 순서가 이 스크립트에 있다 |
 | **"이 레포에서 사용된 스킬을 리스트하라"** | `bash <repo>/bootstrap/herald-env-setup.sh --list-skills` 를 실행해 **지금 이 맥에 로드된** herald-ai 스킬·OMC 스킬/에이전트·superpowers 스킬을 그대로 보여 준다. 각 갈래의 출처와 역할 설명은 [`docs/SKILLS.md`](docs/SKILLS.md). 미설치 항목이 있으면 채우는 명령을 함께 제시한다 |
 | **"OMC 의 HUD 를 동일하게 셋업하라"** | (1) `bash <repo>/bootstrap/herald-env-setup.sh` 로 현재 상태 확인 → (2) 사용자 확인을 받고 `--hud-only`(플러그인 미변경) 또는 `--apply` 로 기준 설정 병합 → (3) HUD 래퍼가 없으면 새 세션에서 `/oh-my-claudecode:hud setup` 1회 → (4) **Claude Code 재시작** 안내. 색이 흐리면 `bootstrap/omc-hud-cwd-color-patch.sh` 를 선택지로 덧붙인다. 기준값과 근거는 [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) §2 |
 | **"v3.1 커밋 체계로 (해라/맞춰라/커밋해라)"** | [`docs/COMMIT-CONVENTION.md`](docs/COMMIT-CONVENTION.md) 의 「호출됐을 때 할 일」 7단계를 그대로 수행한다 — 현재 버전 확인 → 다음 번호 계산(커밋 9 면 다음 묶음 `x0`) → granularity 점검 → CHANGELOG·DEVLOG·버전 파일 갱신 → 검증 → HEREDOC 커밋 → push 는 별도 요청 시. **다른 저장소에서 호출돼도 같다** — 그 저장소의 직전 커밋 제목으로 형식만 맞추고 번호 규칙은 정본을 따른다 |

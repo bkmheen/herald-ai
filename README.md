@@ -13,8 +13,39 @@ Claude 가 응답을 끝내거나 입력을 기다릴 때마다 **모델이 직�
 ⏱️ 1분 12초 | 월누적 $12.3 (+3%)
 ```
 
+## 🆕 새 맥이라면 — 이 두 줄이 전부입니다
+
+```bash
+git clone https://github.com/bkmheen/herald-ai.git ~/Code/herald-ai
+bash ~/Code/herald-ai/bootstrap/herald-onboard.sh
+```
+
+두 번째 명령이 **전체 순서를 처음부터 끝까지 점검**하고, 안 되어 있는 것은 무엇을 어떻게 하면
+되는지 **번호 붙은 할 일 목록**으로 알려 줍니다(아무것도 바꾸지 않습니다).
+자동으로 되는 것부터 처리하려면 `--apply` 를 붙입니다.
+
+```bash
+bash ~/Code/herald-ai/bootstrap/herald-onboard.sh --apply
+```
+
+| 점검 항목 | 자동 처리 |
+|---|:---:|
+| 시스템 의존성 (`bash`·`python3`·`node`·`git`·`curl`·`bc`·`jq`) | 명령 안내 |
+| **Claude Code** 설치 | 명령 안내 |
+| herald-ai 본체 — 알림 훅 · 스킬 · vault 도구 | ✅ |
+| 텔레그램 토큰·CHAT_ID | 명령 안내 |
+| **oh-my-claudecode** 플러그인 · **HUD 상태줄** 설정 | ✅ |
+| 커밋 규약 호출어 **「v3.1 커밋 체계」** 등록 | ✅ |
+
+> 사용자 승인이나 자격증명이 필요한 일(패키지 설치·Claude Code 설치·토큰 입력)은
+> **대신 하지 않고 명령만 보여 줍니다.** 남은 항목이 있으면 exit 1 이므로 스크립트로도 판정됩니다.
+
+`clone` 위치는 자유입니다 — 스크립트가 자기 위치를 기준으로 저장소를 찾습니다.
+세부 설명은 [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md), 커밋 규약은 [docs/COMMIT-CONVENTION.md](docs/COMMIT-CONVENTION.md).
+
 ## ✨ 특징
 
+- **저장소 하나로 끝** — `herald-onboard.sh` 가 전체 순서를 점검하고 빠진 것을 안내·설치합니다.
 - **모델 자작 요약** — transcript 원문이 아니라 Claude 가 쓴 핵심 요약을 전송.
 - **타입 분화** — `✅ 완료` / `🔄 진행 보고` / `⏸️ 응답 대기` / `❌ 오류` 를 마커로 구분.
 - **비용 인지** — 매 알림에 `ccusage` 월누적 비용·증감률 표시.

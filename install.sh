@@ -143,7 +143,10 @@ PY
 # 5) 완료 안내 -------------------------------------------------
 say "[7/7] 완료"
 say ""
-say "다음 단계:"
+say "다음 단계 — 전체를 한 번에 점검하려면:"
+say "  bash $REPO_DIR/bootstrap/herald-onboard.sh          # 남은 할 일을 번호로 알려 줍니다"
+say ""
+say "개별 항목:"
 say "  1) telegram.conf 에 봇 토큰/CHAT_ID 입력 (아직이면)"
 say "       \$EDITOR $CONF"
 say "  2) (선택) 플랜 설정:  bash $TT_DIR/scripts/task-tracker.sh setup"

@@ -33,19 +33,30 @@ claude --version                            # 확인
 
 ## 30초 요약 — 새 맥에서 할 일
 
+**순서를 외울 필요가 없습니다.** 단일 진입점이 전체를 점검하고 빠진 것을 안내합니다.
+
 ```bash
 git clone https://github.com/bkmheen/herald-ai.git ~/Code/herald-ai
-cd ~/Code/herald-ai
-
-bash install.sh                                    # 1) herald-ai 본체(알림·스킬·vault 도구)
-bash bootstrap/herald-env-setup.sh                 # 2) 동반 환경 점검 — 무엇이 빠졌는지만 보여줌
-bash bootstrap/herald-env-setup.sh --apply         # 3) 필수 구성요소(OMC) + HUD 설정 적용
-bash bootstrap/herald-convention-register.sh       # 4) "v3.1 커밋 체계" 호출어 등록
+bash ~/Code/herald-ai/bootstrap/herald-onboard.sh           # 전체 점검 (아무것도 안 바꿈)
+bash ~/Code/herald-ai/bootstrap/herald-onboard.sh --apply   # 자동으로 되는 것 실행
 ```
 
 이후 **Claude Code 를 재시작**하고, 새 세션에서 `/oh-my-claudecode:hud setup` 을 한 번
-실행하면 상태줄까지 완성됩니다. 마지막으로 `bash bootstrap/herald-env-setup.sh` 를 다시 돌려
-**전 항목 ✅** 을 확인합니다.
+실행하면 상태줄까지 완성됩니다. 마지막으로 점검을 다시 돌려 **전 항목 ✅** 을 확인합니다
+(남은 항목이 있으면 exit 1).
+
+<details>
+<summary>온보딩이 안에서 부르는 단계별 명령 (직접 돌려도 됩니다)</summary>
+
+```bash
+cd ~/Code/herald-ai
+bash install.sh                                    # 1) herald-ai 본체(알림·스킬·vault 도구)
+bash bootstrap/herald-env-setup.sh                 # 2) 동반 환경 점검
+bash bootstrap/herald-env-setup.sh --apply         # 3) OMC 플러그인 + HUD 설정
+bash bootstrap/herald-convention-register.sh       # 4) "v3.1 커밋 체계" 호출어 등록
+```
+
+</details>
 
 > **clone 위치는 자유입니다.** 스크립트들은 자기 위치를 기준으로 저장소를 찾습니다.
 > 다만 호출어 등록 블록에는 **그때의 실제 경로**가 들어가므로, 나중에 저장소를 옮기면

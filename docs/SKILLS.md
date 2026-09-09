@@ -72,6 +72,9 @@ MCP 툴도 함께 붙습니다 — LSP(정의·참조·진단·리네임) · wik
 ## 새 맥에서 이 목록을 재현하려면
 
 ```bash
+bash bootstrap/herald-onboard.sh --apply     # 전체를 한 번에 (아래 단계를 순서대로 부른다)
+
+# 또는 단계별로
 bash install.sh                              # 1갈래 (herald-ai 스킬·커맨드)
 bash bootstrap/herald-env-setup.sh --apply   # 2갈래 (OMC) + HUD 설정
 bash bootstrap/herald-env-setup.sh --apply --all   # 3갈래(superpowers)까지
