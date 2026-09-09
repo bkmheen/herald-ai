@@ -130,6 +130,13 @@ bash bootstrap/herald-env-setup.sh --hud-only      # HUD 상태줄 설정만 기
 bash bootstrap/herald-env-setup.sh --list-skills   # 지금 로드된 스킬·에이전트 목록
 ```
 
+커밋 규약(**v3.1.0**)도 이 저장소가 함께 배포합니다.
+
+```bash
+bash bootstrap/herald-convention-register.sh          # "v3.1 커밋 체계" 호출어 등록
+bash bootstrap/herald-convention-init.sh <새 저장소>   # 새 저장소에 규약 도입(기본 모의 실행)
+```
+
 명세의 단일 출처는 [`config/environment.manifest.json`](config/environment.manifest.json),
 설치 순서·이유는 [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) 에 있습니다.
 

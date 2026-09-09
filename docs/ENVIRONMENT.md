@@ -15,19 +15,41 @@ herald-ai 는 알림 훅만이 아니라 **"이 저장소를 clone 하면 그 �
 
 ---
 
+## 0. 그 맥에 아직 아무것도 없다면
+
+herald-ai 는 Claude Code 위에서 돕니다. **Claude Code 자체가 먼저** 있어야 합니다.
+
+```bash
+# 1) 시스템 의존성 (Homebrew 가 없으면 https://brew.sh 먼저)
+brew install bc jq node git
+
+# 2) Claude Code
+npm install -g @anthropic-ai/claude-code   # 또는 https://claude.ai/download (데스크톱 앱)
+claude --version                            # 확인
+```
+
+`claude` 가 PATH 에 없으면 아래 설치 스크립트들은 **플러그인 설치만 건너뛰고** 나머지는
+정상 진행합니다(설정 병합·스킬 복사). 나중에 `claude` 를 깔고 다시 돌리면 됩니다.
+
 ## 30초 요약 — 새 맥에서 할 일
 
 ```bash
 git clone https://github.com/bkmheen/herald-ai.git ~/Code/herald-ai
 cd ~/Code/herald-ai
 
-bash install.sh                              # 1) herald-ai 본체(알림·스킬·vault 도구)
-bash bootstrap/herald-env-setup.sh           # 2) 동반 환경 점검 — 무엇이 빠졌는지만 보여줌
-bash bootstrap/herald-env-setup.sh --apply   # 3) 필수 구성요소 + HUD 설정 적용
+bash install.sh                                    # 1) herald-ai 본체(알림·스킬·vault 도구)
+bash bootstrap/herald-env-setup.sh                 # 2) 동반 환경 점검 — 무엇이 빠졌는지만 보여줌
+bash bootstrap/herald-env-setup.sh --apply         # 3) 필수 구성요소(OMC) + HUD 설정 적용
+bash bootstrap/herald-convention-register.sh       # 4) "v3.1 커밋 체계" 호출어 등록
 ```
 
-3) 이후 **Claude Code 를 재시작**하고, 새 세션에서 `/oh-my-claudecode:hud setup` 을 한 번
-실행하면 상태줄까지 완성됩니다.
+이후 **Claude Code 를 재시작**하고, 새 세션에서 `/oh-my-claudecode:hud setup` 을 한 번
+실행하면 상태줄까지 완성됩니다. 마지막으로 `bash bootstrap/herald-env-setup.sh` 를 다시 돌려
+**전 항목 ✅** 을 확인합니다.
+
+> **clone 위치는 자유입니다.** 스크립트들은 자기 위치를 기준으로 저장소를 찾습니다.
+> 다만 호출어 등록 블록에는 **그때의 실제 경로**가 들어가므로, 나중에 저장소를 옮기면
+> `bash bootstrap/herald-convention-register.sh` 를 다시 돌려 경로를 갱신하십시오.
 
 | 명령 | 하는 일 |
 |---|---|
@@ -38,6 +60,15 @@ bash bootstrap/herald-env-setup.sh --apply   # 3) 필수 구성요소 + HUD 설�
 | `… --apply --with-settings` | 권장 전역 설정(`env`·`tui` 등)도 병합 |
 | `… --apply --no-hud` | HUD 설정은 건드리지 않음 |
 | `… --hud-only` | **HUD 설정만** 기준값으로. 플러그인은 건드리지 않는다 (이미 OMC 가 깔린 맥) |
+
+커밋 규약 쪽은 별도 스크립트입니다.
+
+| 명령 | 하는 일 |
+|---|---|
+| `bash bootstrap/herald-convention-register.sh` | **"v3.1 커밋 체계"** 호출어를 이 맥의 글로벌 지침에 등록 (`--check` · `--revert`) |
+| `bash bootstrap/herald-convention-init.sh <저장소>` | 새 저장소에 규약 도입 — `VERSION`·`CHANGELOG`·`DEVLOG`·`CLAUDE.md` 스캐폴딩 (기본 모의 실행, `--apply` 로 생성) |
+
+규약 자체는 [COMMIT-CONVENTION.md](COMMIT-CONVENTION.md) 에 있습니다.
 
 `settings.json` 은 변경 직전 `settings.json.bak.<epoch>` 로 백업됩니다.
 

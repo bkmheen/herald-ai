@@ -175,6 +175,15 @@ while IFS=$'\t' read -r kind pid state required cmd ver capver provides; do
 done <<< "$PLAN"
 
 say ""
+say "[커밋 규약]"
+if bash "$REPO_DIR/bootstrap/herald-convention-register.sh" --check >/dev/null 2>&1; then
+    ok "호출어 「v3.1 커밋 체계」 등록됨 (글로벌 지침)"
+else
+    warn "호출어 미등록 — 다른 디렉토리에서는 규약이 호출되지 않습니다 (선택)"
+    say  "       bash $REPO_DIR/bootstrap/herald-convention-register.sh"
+fi
+
+say ""
 say "[HUD · 전역 설정]"
 while IFS=$'\t' read -r kind name state rest; do
     case "$kind:$name:$state" in
