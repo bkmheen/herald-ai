@@ -1,0 +1,141 @@
+{
+  "schema": "herald.environment-manifest/1.0.0",
+  "captured_at": "2026-09-09",
+  "note": "herald-ai 가 직접 설치하지 않지만 같은 작업 환경을 이루는 '동반 구성요소' 명세. 값의 단일 출처는 이 파일이며 docs/ENVIRONMENT.md 와 bootstrap/herald-env-setup.sh 가 이 파일을 읽는다. 호스트 이름·IP·개인 경로는 담지 않는다(공개 저장소 원칙).",
+
+  "marketplaces": [
+    {
+      "name": "omc",
+      "required": true,
+      "source": "git",
+      "url": "https://github.com/Yeachan-Heo/oh-my-claudecode.git",
+      "add_command": "claude plugin marketplace add https://github.com/Yeachan-Heo/oh-my-claudecode.git"
+    },
+    {
+      "name": "claude-plugins-official",
+      "required": false,
+      "source": "github",
+      "repo": "anthropics/claude-plugins-official",
+      "add_command": "claude plugin marketplace add anthropics/claude-plugins-official"
+    },
+    {
+      "name": "superpowers-marketplace",
+      "required": false,
+      "source": "github",
+      "repo": "obra/superpowers-marketplace",
+      "add_command": "claude plugin marketplace add obra/superpowers-marketplace"
+    }
+  ],
+
+  "plugins": [
+    {
+      "id": "oh-my-claudecode@omc",
+      "name": "oh-my-claudecode",
+      "marketplace": "omc",
+      "required": true,
+      "scope": "user",
+      "version_at_capture": "4.15.1",
+      "install_command": "claude plugin install oh-my-claudecode@omc --scope user",
+      "provides": "스킬 41 · 에이전트 19 · 슬래시커맨드 28 · MCP 툴(LSP·wiki·notepad·state·ast-grep·python_repl 등)",
+      "why": "herald-ai 세션에서 실제로 쓰는 작업 엔진(계획·실행·검증 에이전트, HUD 상태줄). 이것이 없으면 herald-ai 알림은 동작하지만 작업 방식이 달라진다."
+    },
+    {
+      "id": "frontend-design@claude-plugins-official",
+      "name": "frontend-design",
+      "marketplace": "claude-plugins-official",
+      "required": false,
+      "scope": "user",
+      "version_at_capture": "unknown",
+      "install_command": "claude plugin install frontend-design@claude-plugins-official --scope user",
+      "provides": "UI 설계 스킬",
+      "why": "웹/UI 작업이 있는 맥에서만 필요."
+    },
+    {
+      "id": "swift-lsp@claude-plugins-official",
+      "name": "swift-lsp",
+      "marketplace": "claude-plugins-official",
+      "required": false,
+      "scope": "user",
+      "version_at_capture": "1.0.0",
+      "install_command": "claude plugin install swift-lsp@claude-plugins-official --scope user",
+      "provides": "Swift 언어 서버 연동",
+      "why": "iOS/macOS 앱 작업이 있는 맥에서만 필요."
+    },
+    {
+      "id": "superpowers@skills-dir",
+      "name": "superpowers",
+      "marketplace": "superpowers-marketplace",
+      "required": false,
+      "scope": "user",
+      "version_at_capture": "5.0.5",
+      "install_command": "claude plugin install superpowers@superpowers-marketplace --scope user",
+      "install_note": "기준 스냅샷에서는 마켓플레이스 설치가 아니라 ~/.claude/skills/superpowers/ 에 놓인 skills-dir 플러그인으로 로드되고 있다. 둘 중 한 경로만 쓴다.",
+      "provides": "brainstorming · TDD · systematic-debugging 등 작업 규율 스킬",
+      "why": "작업 절차 스킬. 없어도 herald-ai 는 동작한다."
+    }
+  ],
+
+  "hud": {
+    "description": "OMC HUD(상태줄) 기준 설정. 기준 스냅샷의 관리 맥에서 쓰던 값 그대로다.",
+    "requires": "oh-my-claudecode@omc",
+    "wrapper": {
+      "path": "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hud/omc-hud.mjs",
+      "how": "Claude Code 안에서 /oh-my-claudecode:hud setup 을 1회 실행하면 플러그인 템플릿에서 생성된다. 손으로 쓰지 않는다(플러그인 쪽 단일 출처).",
+      "companion": "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hud/lib/config-dir.mjs"
+    },
+    "settings_fragment": {
+      "statusLine": {
+        "type": "command",
+        "command": "node ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/hud/omc-hud.mjs"
+      },
+      "omcHud": {
+        "preset": "full",
+        "elements": {
+          "cwd": true,
+          "cwdFormat": "folder",
+          "hostname": true
+        }
+      }
+    },
+    "rationale": {
+      "preset": "full — 에이전트 다중 실행 줄까지 보이는 최대 표시. minimal/focused/full 중 선택.",
+      "cwd": "여러 창을 띄우고 일하므로 현재 디렉토리를 상태줄에 항상 둔다. cwdFormat=folder 는 전체 경로가 아니라 마지막 폴더명만.",
+      "hostname": "여러 맥에서 같은 저장소를 다루므로 어느 기계인지 상태줄에서 즉시 구분한다. herald-ai 알림 라벨의 호스트 구분과 같은 목적."
+    },
+    "patches": [
+      {
+        "file": "bootstrap/omc-hud-cwd-color-patch.sh",
+        "optional": true,
+        "what": "HUD 의 cwd 색을 dim → brightCyan 으로 바꾼다(어두운 터미널에서 거의 안 보였다).",
+        "caution": "플러그인 캐시 파일을 직접 고치는 패치라 OMC 업데이트마다 다시 적용해야 한다."
+      }
+    ]
+  },
+
+  "claude_settings_recommended": {
+    "description": "기준 맥의 Claude Code 전역 설정 중 기계에 종속되지 않는 값만 옮긴 것. 적용은 선택이다.",
+    "fragment": {
+      "env": {
+        "CLAUDE_CODE_MAX_RETRIES": "15",
+        "CLAUDE_CODE_RETRY_WATCHDOG": "1",
+        "API_TIMEOUT_MS": "1200000"
+      },
+      "tui": "fullscreen",
+      "cleanupPeriodDays": 365
+    },
+    "not_portable": [
+      "additionalDirectories — 맥마다 경로가 다르다. 각자 지정한다.",
+      "permissions — 맥마다 다루는 저장소가 달라 그대로 옮기면 과대 허용이 된다.",
+      "hooks — herald-ai install.sh 가 관리한다. 여기서 손대지 않는다."
+    ]
+  },
+
+  "system_dependencies": {
+    "required": ["bash", "python3", "node"],
+    "recommended": ["curl", "bc", "jq", "git"],
+    "install_hint": {
+      "macos": "brew install bc jq node git",
+      "debian": "sudo apt install -y python3 curl bc jq nodejs npm git"
+    }
+  }
+}

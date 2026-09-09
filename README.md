@@ -24,6 +24,7 @@ Claude 가 응답을 끝내거나 입력을 기다릴 때마다 **모델이 직�
 - **토큰 외부화** — 봇 토큰은 `telegram.conf`(git 제외)에만. repo 공개 안전.
 - **`/session-log`·`/session-save` 커맨드** — 세션 작업을 일자·시간별 차례로 미리 보고(`/session-log`) 개발기록 MD로 저장(`/session-save`). 카테고리 필터 지원(선택 기능).
 - **`herald-vault` 도구** — 세션기록을 한 저장소로 모으고 색인·검색한다. 일반 호스트는 **올리기만** 하고 읽지 못하는 단방향 구조. → 아래 「herald-vault 도구」 절
+- **동반 환경 명세** — 이 저장소는 알림 도구이면서 **"clone 한 맥이 어떤 환경이어야 하는가"** 의 명세이기도 합니다. `bootstrap/herald-env-setup.sh` 한 줄로 무엇이 빠졌는지 점검하고 채웁니다(OMC 플러그인 · HUD 상태줄 설정). → [자세히](docs/ENVIRONMENT.md)
 - **`trip-ledger` 스킬** — 여행·출장 지출을 노트 → 구글시트 원장 → 구글맵 목록으로 잇는 파이프라인. **막혔던 길을 다시 가지 않도록** 검증된 경로와 재시도 금지 경로를 저장소에 축적해 여러 Mac 이 공유한다. → [자세히](#-trip-ledger--여행출장-지출-원장)
 
 ## 📦 요구 사항
@@ -116,6 +117,21 @@ grep -c 'task-tracker/scripts' ~/.claude/settings.json   # 1 이상이면 정상
 ```
 
 이후 **Claude Code 새 세션을 시작**하면 훅이 활성화되어, 응답 종료·입력 대기 때마다 알림이 전송됩니다.
+
+### 3.5) 동반 환경 맞추기 (새 맥이라면 이어서)
+
+herald-ai 본체가 깔렸다면, 같은 작업 환경을 이루는 **동반 구성요소**(oh-my-claudecode 플러그인 ·
+HUD 상태줄 설정)를 점검합니다. 점검은 아무것도 바꾸지 않습니다.
+
+```bash
+bash bootstrap/herald-env-setup.sh                 # 점검 — 기준과의 차이만 출력
+bash bootstrap/herald-env-setup.sh --apply         # 필수 구성요소 + HUD 설정 적용
+bash bootstrap/herald-env-setup.sh --hud-only      # HUD 상태줄 설정만 기준값으로
+bash bootstrap/herald-env-setup.sh --list-skills   # 지금 로드된 스킬·에이전트 목록
+```
+
+명세의 단일 출처는 [`config/environment.manifest.json`](config/environment.manifest.json),
+설치 순서·이유는 [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) 에 있습니다.
 
 ### 4) 업데이트 · 제거
 
@@ -289,7 +305,9 @@ bash uninstall.sh   # settings.json 의 herald 훅만 제거(스킬 보존)
 - **[CHANGELOG.md](CHANGELOG.md)** — 버전별 변경 요약(사용자용, Keep a Changelog 표준).
 - **[DEVLOG.md](DEVLOG.md)** — 변경 배경·의사결정 상세(개발자용).
 - **[VERSION](VERSION)** — 현재 버전 단일 출처.
-- **[CLAUDE.md](CLAUDE.md)** — 저장소 작업 규칙(버전·커밋·개발기록·푸시) 단일 출처. Claude Code 가 자동 로드.
+- **[CLAUDE.md](CLAUDE.md)** — 저장소 작업 규칙(버전·커밋·개발기록·푸시·환경 질의) 단일 출처. Claude Code 가 자동 로드.
+- **[docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)** — 새 맥에서 같은 환경 만들기(동반 구성요소·HUD 설정).
+- **[docs/SKILLS.md](docs/SKILLS.md)** — 이 환경에서 쓰는 스킬 목록(herald-ai · OMC · superpowers)과 역할.
 
 > **현재 버전은 [`VERSION`](VERSION) 파일에서 확인합니다.** 여기에 숫자를 옮겨 적지 않습니다 —
 > 두 곳에 적으면 반드시 한쪽이 낡습니다 (실제로 두 번 낡았습니다).

@@ -18,6 +18,9 @@ git 으로 배포되므로 어느 Mac 에서 clone/설치하든 동일하게 적
 - **개발 기록**: README / CHANGELOG / DEVLOG 표준 기록 유지, 파일 비대 시 주제별
   분할(`README_subtitle.md`)하고 전체 구조는 README 에 남겨 연결.
 - **푸시**: 자동 금지, 사용자 요청 시에만.
+- **환경 질의**: 사용자가 "이 맥에 무엇이 깔려 있나 / 무엇을 깔아야 하나 / 환경을 맞춰 달라"
+  류를 물으면 **추측하지 말고** [`config/environment.manifest.json`](config/environment.manifest.json)
+  과 [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) 를 근거로 답한다 (아래 「환경 질의 응답 규칙」).
 
 ---
 
@@ -139,6 +142,42 @@ Co-Authored-By: Claude <모델명> <noreply@anthropic.com>
 (표본: [`config/vault.conf.example`](config/vault.conf.example)).
 
 스크립트에 **내 환경 값을 기본값으로 박지 않는다.** 처음 쓰는 사람이 엉뚱한 곳으로 붙는다.
+
+### 환경 질의 응답 규칙 — 이 저장소는 "무엇을 깔아야 하는가" 도 들고 다닌다
+
+herald-ai 는 알림 도구이면서, **clone 된 맥이 어떤 환경이어야 하는지를 기술한 명세**이기도 하다.
+새 맥에서 이 저장소를 받은 사람이 "무엇을 더 깔아야 하는가" 를 스스로 알 수 있어야 한다.
+
+**사용자가 환경·설치·스킬을 물으면 이렇게 답한다.**
+
+1. **먼저 점검을 돌린다** — 추측하거나 기억으로 답하지 않는다.
+   ```bash
+   bash <저장소경로>/bootstrap/herald-env-setup.sh
+   ```
+   이 명령은 아무것도 바꾸지 않고 기준과의 차이만 출력한다 (필수 항목이 빠지면 exit 1).
+2. **빠진 것을 근거와 함께 안내한다** — 무엇이 없고, 왜 필요하고, 어떤 명령으로 채우는지.
+   근거는 [`config/environment.manifest.json`](config/environment.manifest.json)(값의 단일 출처)과
+   [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md)(설명·순서)다.
+3. **적용은 사용자 확인 후에** 한다. `--apply` 는 `~/.claude/settings.json` 을 고치고 플러그인을
+   설치한다 — 묻지 않고 실행하지 않는다.
+4. **oh-my-claudecode(OMC) 는 필수 항목이다.** herald-ai 알림만으로도 세션은 돌아가지만,
+   이 환경의 작업 방식(에이전트·스킬·HUD 상태줄)은 OMC 를 전제한다. 환경 질문에 답할 때
+   **OMC 설치와 HUD 설정을 항상 함께** 안내한다 — 둘은 한 벌이다.
+
+#### 요청별 대응표 — 이 세 가지는 반드시 답할 수 있어야 한다
+
+저장소를 언급하며 아래처럼 요청하면, 표의 절차를 그대로 수행한다. **문서를 낭독하지 말고
+명령을 돌려 실제 상태로 답한다.** (`<repo>` = 이 저장소 경로. 사용자에게 명령을 안내할 때는
+글로벌 규칙에 따라 **절대경로**로 적는다.)
+
+| 요청 | 무엇을 하는가 |
+|---|---|
+| **"이 레포에서 사용된 스킬을 리스트하라"** | `bash <repo>/bootstrap/herald-env-setup.sh --list-skills` 를 실행해 **지금 이 맥에 로드된** herald-ai 스킬·OMC 스킬/에이전트·superpowers 스킬을 그대로 보여 준다. 각 갈래의 출처와 역할 설명은 [`docs/SKILLS.md`](docs/SKILLS.md). 미설치 항목이 있으면 채우는 명령을 함께 제시한다 |
+| **"OMC 의 HUD 를 동일하게 셋업하라"** | (1) `bash <repo>/bootstrap/herald-env-setup.sh` 로 현재 상태 확인 → (2) 사용자 확인을 받고 `--hud-only`(플러그인 미변경) 또는 `--apply` 로 기준 설정 병합 → (3) HUD 래퍼가 없으면 새 세션에서 `/oh-my-claudecode:hud setup` 1회 → (4) **Claude Code 재시작** 안내. 색이 흐리면 `bootstrap/omc-hud-cwd-color-patch.sh` 를 선택지로 덧붙인다. 기준값과 근거는 [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) §2 |
+| **"OMC 설치를 안내하라"** | 마켓플레이스 등록 → 플러그인 설치 → 재시작 → 검증(`claude plugin list`) 순으로 안내하고, **HUD 설정까지 한 벌로** 이어 준다. 명령 문자열은 매니페스트의 `add_command`·`install_command` 를 쓴다(문자열을 손으로 짓지 않는다). 전역 `omc` CLI(npm)는 `/ask`·`/ccg`·`/omc-teams` 계열에만 필요한 **별개 항목**임을 구분해 말한다 |
+
+**명세를 바꿀 때** — 기준 맥의 설정이 바뀌면 매니페스트에 반영하고 `captured_at` 을 갱신한다.
+값은 매니페스트에만, 설명은 문서에만 둔다. 두 곳에 값을 적지 않는다.
 
 ### 커밋 시 개발 기록 규칙
 
