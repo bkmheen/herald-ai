@@ -28,6 +28,11 @@ git 으로 배포되므로 어느 Mac 에서 clone/설치하든 동일하게 적
 
 ### 버전 관리 규칙 (규약 v3.1.0 체계 — 전 이력 적용)
 
+> **여러 저장소 공통 규약의 정본은 [`docs/COMMIT-CONVENTION.md`](docs/COMMIT-CONVENTION.md) 다.**
+> 사용자가 **"v3.1 커밋 체계"** 라고 부르면 그 문서를 뜻한다 — 호출되면 그 문서의
+> 「호출됐을 때 할 일」 7단계를 따른다. 이 절은 herald-ai 저장소에 적용된 결과이고,
+> 규약 자체(트레일러·granularity·금지 항목·이력 구간 해석)는 정본 문서에 있다.
+
 형식은 `major.minor.patch` 3단이되, **`patch` 는 묶음 번호 뒤에 한 자리 커밋 번호를 붙인 값**이다.
 
 ```
@@ -174,6 +179,7 @@ herald-ai 는 알림 도구이면서, **clone 된 맥이 어떤 환경이어야 
 |---|---|
 | **"이 레포에서 사용된 스킬을 리스트하라"** | `bash <repo>/bootstrap/herald-env-setup.sh --list-skills` 를 실행해 **지금 이 맥에 로드된** herald-ai 스킬·OMC 스킬/에이전트·superpowers 스킬을 그대로 보여 준다. 각 갈래의 출처와 역할 설명은 [`docs/SKILLS.md`](docs/SKILLS.md). 미설치 항목이 있으면 채우는 명령을 함께 제시한다 |
 | **"OMC 의 HUD 를 동일하게 셋업하라"** | (1) `bash <repo>/bootstrap/herald-env-setup.sh` 로 현재 상태 확인 → (2) 사용자 확인을 받고 `--hud-only`(플러그인 미변경) 또는 `--apply` 로 기준 설정 병합 → (3) HUD 래퍼가 없으면 새 세션에서 `/oh-my-claudecode:hud setup` 1회 → (4) **Claude Code 재시작** 안내. 색이 흐리면 `bootstrap/omc-hud-cwd-color-patch.sh` 를 선택지로 덧붙인다. 기준값과 근거는 [`docs/ENVIRONMENT.md`](docs/ENVIRONMENT.md) §2 |
+| **"v3.1 커밋 체계로 (해라/맞춰라/커밋해라)"** | [`docs/COMMIT-CONVENTION.md`](docs/COMMIT-CONVENTION.md) 의 「호출됐을 때 할 일」 7단계를 그대로 수행한다 — 현재 버전 확인 → 다음 번호 계산(커밋 9 면 다음 묶음 `x0`) → granularity 점검 → CHANGELOG·DEVLOG·버전 파일 갱신 → 검증 → HEREDOC 커밋 → push 는 별도 요청 시. **다른 저장소에서 호출돼도 같다** — 그 저장소의 직전 커밋 제목으로 형식만 맞추고 번호 규칙은 정본을 따른다 |
 | **"OMC 설치를 안내하라"** | 마켓플레이스 등록 → 플러그인 설치 → 재시작 → 검증(`claude plugin list`) 순으로 안내하고, **HUD 설정까지 한 벌로** 이어 준다. 명령 문자열은 매니페스트의 `add_command`·`install_command` 를 쓴다(문자열을 손으로 짓지 않는다). 전역 `omc` CLI(npm)는 `/ask`·`/ccg`·`/omc-teams` 계열에만 필요한 **별개 항목**임을 구분해 말한다 |
 
 **명세를 바꿀 때** — 기준 맥의 설정이 바뀌면 매니페스트에 반영하고 `captured_at` 을 갱신한다.

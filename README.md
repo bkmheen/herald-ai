@@ -308,6 +308,7 @@ bash uninstall.sh   # settings.json 의 herald 훅만 제거(스킬 보존)
 - **[CLAUDE.md](CLAUDE.md)** — 저장소 작업 규칙(버전·커밋·개발기록·푸시·환경 질의) 단일 출처. Claude Code 가 자동 로드.
 - **[docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)** — 새 맥에서 같은 환경 만들기(동반 구성요소·HUD 설정).
 - **[docs/SKILLS.md](docs/SKILLS.md)** — 이 환경에서 쓰는 스킬 목록(herald-ai · OMC · superpowers)과 역할.
+- **[docs/COMMIT-CONVENTION.md](docs/COMMIT-CONVENTION.md)** — 여러 저장소 공통 커밋·버전 규약 **v3.1.0** 정본. 호출어 "v3.1 커밋 체계".
 
 > **현재 버전은 [`VERSION`](VERSION) 파일에서 확인합니다.** 여기에 숫자를 옮겨 적지 않습니다 —
 > 두 곳에 적으면 반드시 한쪽이 낡습니다 (실제로 두 번 낡았습니다).
