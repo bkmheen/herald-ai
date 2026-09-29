@@ -296,8 +296,22 @@ def cmd_init(a):
 
     target = os.path.abspath(os.path.expanduser(a.target))
 
-    # 인자 값 채우기 — CLI 인자 > manifest 기본값
+    # 받을 인자는 **그 버전의 manifest 가 정한다.** 여기서 하드코딩하면 반드시 낡는다 —
+    # 실제로 0.1 의 DELIVERABLE_DIR·PROGRESS_DIR·MEMORY_DIR 이 박혀 있어서
+    # 0.2 가 새로 둔 --source-dir·--llm-id 는 show 가 안내해 주면서도 init 이 거부했다.
     params = m.get("params") or {}
+    pp = argparse.ArgumentParser(prog="ha-we init %s" % a.id, add_help=False)
+    for k, spec in params.items():
+        pp.add_argument("--" + flag_of(k), dest=k.lower(), help=spec.get("desc", ""))
+    known, unknown = pp.parse_known_args(getattr(a, "extra", None) or [])
+    if unknown:
+        die("모르는 인자: %s\n   %s v%s 가 받는 인자: %s"
+            % (" ".join(unknown), a.id, ver,
+               " ".join("--" + flag_of(k) for k in params) or "(없음)"))
+    for k in params:
+        setattr(a, k.lower(), getattr(known, k.lower(), None))
+
+    # 인자 값 채우기 — CLI 인자 > manifest 기본값
     vals = {}
     for k, spec in params.items():
         cli = getattr(a, k.lower(), None)
@@ -493,13 +507,9 @@ def main():
     sp.add_argument("--apply", action="store_true", help="실제로 만든다")
     sp.add_argument("--with-convention", action="store_true",
                     help="커밋 규약 v3.1.0 까지 이어서 도입")
-    sp.add_argument("--name", dest="project_name", help="프로젝트 이름")
-    sp.add_argument("--goal", dest="goal", help="한 줄 목표")
-    sp.add_argument("--due", dest="due", help="기한")
-    sp.add_argument("--deliverable-dir", dest="deliverable_dir")
-    sp.add_argument("--progress-dir", dest="progress_dir")
-    sp.add_argument("--memory-dir", dest="memory_dir")
     sp.add_argument("--date", help="생성일 (기본: 오늘)")
+    # 환경별 인자(--name·--goal·--source-dir …)는 여기 적지 않는다.
+    # 버전의 manifest params 에서 cmd_init 이 만들어 붙인다. `ha-we show <id>` 가 목록이다.
     sp.set_defaults(fn=cmd_init)
 
     sp = sub.add_parser("bump", help="최신을 복사해 새 버전을 연다")
@@ -511,10 +521,13 @@ def main():
     sp.add_argument("--date")
     sp.set_defaults(fn=cmd_bump)
 
-    a = p.parse_args()
+    a, extra = p.parse_known_args()
     if not a.cmd:
         p.print_help()
         return 2
+    if extra and a.cmd != "init":
+        die("모르는 인자: %s" % " ".join(extra))
+    a.extra = extra
     return a.fn(a)
 
 
