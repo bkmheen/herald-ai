@@ -3,7 +3,7 @@
 
 무엇인가
     "작업 디렉토리 한 벌" 을 이름과 버전으로 관리한다. 개별 환경은 `ha-we-<id>` 로 부른다.
-    예: `ha-we-work_ppt` = 로컬 디렉토리에서 발표자료 만들기.
+    예: `ha-we-ppt_gen` = 원본 자료로 PPT 를 생성하는 작업 디렉토리.
 
     코드 저장소 템플릿이 아니다. 대화 기록도 홈의 기억 폴더도 컴퓨터 간에 동기화되지 않으므로,
     **이어받는 방법이 디렉토리 안에 자족적으로 들어 있는** 작업 디렉토리를 만든다.
@@ -23,9 +23,9 @@
 
 예
     ha-we list
-    ha-we init work_ppt ~/Desktop/새프로젝트 --name "특허 발표" --goal "..." --due 2026-12-01
-    ha-we init work_ppt ~/Desktop/새프로젝트 --name "..." --goal "..." --apply
-    ha-we diff work_ppt 0.1 0.2
+    ha-we init ppt_gen ~/Desktop/새프로젝트 --name "특허 발표" --goal "..." --due 2026-12-01
+    ha-we init ppt_gen ~/Desktop/새프로젝트 --name "..." --goal "..." --apply
+    ha-we diff ppt_gen 0.1 0.2
 """
 
 import argparse
@@ -331,15 +331,19 @@ def cmd_init(a):
             print("  ✅ 대상 디렉토리 생성 예정")
 
     made, skipped = 0, 0
+    created_rel = []          # 안내 문구를 만든 것에 맞추기 위해 기록한다
     for root, dirs, files in os.walk(tpl):
         dirs.sort()
         for fn in sorted(files):
             src = os.path.join(root, fn)
             rel = os.path.relpath(src, tpl)
             # 저장소 보관용 이름 → 실제 이름
+            #   dot-<name>  → .<name>   (경로 어느 자리든)
+            #   _gitignore  → .gitignore
+            # 저장소 안에 실제 점 디렉토리·점 파일을 두면 herald-ai 자신의 git·도구 설정에
+            # 섞이므로 보관용 이름으로 두고 설치할 때 되돌린다.
             parts = rel.split(os.sep)
-            if parts[0] == "dot-claude":
-                parts[0] = ".claude"
+            parts = [(("." + seg[4:]) if seg.startswith("dot-") else seg) for seg in parts]
             if parts[-1] == "_gitignore":
                 parts[-1] = ".gitignore"
             rel_out = os.sep.join(render(p, vals) for p in parts)
@@ -353,6 +357,7 @@ def cmd_init(a):
                 print("  ↷ %s — 이미 있음, 건드리지 않음" % rel_out)
                 skipped += 1
                 continue
+            created_rel.append(rel)
             if not a.apply:
                 print("  ✅ %s 생성 예정" % rel_out)
                 made += 1
@@ -392,11 +397,21 @@ def cmd_init(a):
 
     print()
     if a.apply:
+        # 안내는 그 버전이 실제로 만든 것에 맞춰야 한다. 훅이 없는 환경에
+        # 훅 안내를 내면 사용자가 없는 창을 기다린다.
+        made_hooks = any("dot-claude" in p and "hooks" in p for p in created_rel)
         print("다음 단계:")
-        print("  1) %s/CLAUDE.md 의 목표·기한을 확인합니다." % target)
-        print("  2) Claude Code 를 그 디렉토리에서 열면 훅 신뢰 확인 창이 뜹니다 → 허용.")
-        print("     (훅은 새 세션부터 활성화됩니다. 기억 복원은 그때부터 동작합니다.)")
-        print("  3) git 은 만들지 않았습니다. 필요하면 동기화 수단을 정한 뒤 git init 합니다.")
+        step = 1
+        print("  %d) %s/CLAUDE.md 의 목표·기한을 확인합니다." % (step, target)); step += 1
+        if made_hooks:
+            print("  %d) Claude Code 를 그 디렉토리에서 열면 훅 신뢰 확인 창이 뜹니다 → 허용." % step)
+            print("     (훅은 새 세션부터 활성화됩니다. 기억 복원은 그때부터 동작합니다.)")
+            step += 1
+        else:
+            print("  %d) LLM 을 **그 디렉토리를 작업 디렉토리로 해서** 실행합니다." % step)
+            print("     상위 디렉토리에서 열면 진입점 문서가 읽히지 않습니다.")
+            step += 1
+        print("  %d) git 은 만들지 않았습니다. 필요하면 동기화 수단을 정한 뒤 git init 합니다." % step)
     else:
         print("실제로 만들려면 --apply 를 붙여 다시 실행하십시오.")
     print("─" * 46)

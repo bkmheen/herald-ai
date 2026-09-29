@@ -5,10 +5,12 @@
   "note": "herald-ai(ha) 가 배포하는 작업환경(work_env) 목록. 개별 환경은 ha-we-<id> 로 부른다.",
   "environments": [
     {
-      "id": "work_ppt",
-      "title": "로컬 디렉토리에서 발표자료 만들기",
-      "summary": "여러 맥을 오가며 pptx 산출물을 버전 갈아끼우며 만든다. 기억과 인계 절차가 디렉토리 안에 자족적으로 들어 있다.",
-      "created": "2026-09-18"
+      "id": "ppt_gen",
+      "title": "원본 자료로 PPT 를 생성하는 작업 디렉토리 (여러 LLM 협업)",
+      "summary": "source/ 의 원본(이미지 디렉토리·PDF 등)을 재료로 pptx 를 생성한다. LLM 마다 자기 작업공간을 갖고 각자 만들지만, 공용 .llm/ 을 통해 서로의 진행과 판단을 읽고 이어받는다.",
+      "created": "2026-09-18",
+      "renamed_from": "work_ppt",
+      "renamed_on": "2026-09-29"
     }
   ]
 }

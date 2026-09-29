@@ -1,5 +1,5 @@
 {
-  "id": "work_ppt",
+  "id": "ppt_gen",
   "version": "0.1",
   "title": "로컬 디렉토리에서 발표자료 만들기",
   "summary": "여러 맥을 오가며 pptx 산출물을 버전 갈아끼우며 만드는 작업 디렉토리. 기억과 인계 절차가 디렉토리 안에 자족적으로 들어 있다.",
@@ -56,5 +56,7 @@
     "rsync (없으면 cp 폴백)",
     "python3 (없으면 grep 폴백)"
   ],
-  "pairs_with_convention": true
+  "pairs_with_convention": true,
+  "id_at_release": "work_ppt",
+  "note": "이 버전은 `work_ppt` 라는 이름으로 배포되었다. 2026-09-29 에 환경이 `ppt_gen` 으로 개칭되면서 이 디렉토리로 옮겨졌다. 내용은 릴리스 당시 그대로다."
 }
