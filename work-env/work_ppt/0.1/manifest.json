@@ -1,0 +1,60 @@
+{
+  "id": "work_ppt",
+  "version": "0.1",
+  "title": "로컬 디렉토리에서 발표자료 만들기",
+  "summary": "여러 맥을 오가며 pptx 산출물을 버전 갈아끼우며 만드는 작업 디렉토리. 기억과 인계 절차가 디렉토리 안에 자족적으로 들어 있다.",
+  "created": "2026-09-18",
+  "origin": "260918_patent2026 (특허 아이디어 발표자료 프로젝트) 에서 추출",
+  "deliverable": {
+    "kind": "발표자료",
+    "ext": "pptx",
+    "pairs_with": "md"
+  },
+  "params": {
+    "PROJECT_NAME": {
+      "required": true,
+      "desc": "프로젝트 이름. CLAUDE.md 제목에 들어간다",
+      "default": null
+    },
+    "GOAL": {
+      "required": true,
+      "desc": "한 줄 목표. 무엇을 만드는 프로젝트인가",
+      "default": null
+    },
+    "DUE": {
+      "required": false,
+      "desc": "기한 (YYYY-MM-DD 또는 자유 문구)",
+      "default": "미정"
+    },
+    "DELIVERABLE_DIR": {
+      "required": false,
+      "desc": "산출물 디렉토리 이름",
+      "default": "10. 발표자료"
+    },
+    "PROGRESS_DIR": {
+      "required": false,
+      "desc": "진행 기록 디렉토리 이름",
+      "default": "90. 진행상황"
+    },
+    "MEMORY_DIR": {
+      "required": false,
+      "desc": "기억 사본 디렉토리 이름",
+      "default": "91. Claude 기억"
+    }
+  },
+  "creates": [
+    "CLAUDE.md",
+    ".gitignore",
+    ".claude/settings.json",
+    ".claude/hooks/sync-memory.sh",
+    "<DELIVERABLE_DIR>/00. 버전 관리 규칙.md",
+    "<PROGRESS_DIR>/01. 프로젝트 시작 및 기록 규칙.md",
+    "<MEMORY_DIR>/MEMORY.md"
+  ],
+  "requires": [
+    "bash",
+    "rsync (없으면 cp 폴백)",
+    "python3 (없으면 grep 폴백)"
+  ],
+  "pairs_with_convention": true
+}

@@ -1,0 +1,13 @@
+# 컴퓨터별 임시 상태 — 이력에 남길 것이 아니다
+.omc/
+.session-logs/
+
+# macOS
+.DS_Store
+
+# 기억 동기화 훅의 내부 기록 (사본 쪽에만 생긴다)
+{{MEMORY_DIR}}/.last_sync
+
+# 임시 산출물 · 오피스 잠금 파일
+*.tmp
+~$*

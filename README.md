@@ -56,6 +56,7 @@ bash ~/Code/herald-ai/bootstrap/herald-onboard.sh --apply
 - **`/session-log`·`/session-save` 커맨드** — 세션 작업을 일자·시간별 차례로 미리 보고(`/session-log`) 개발기록 MD로 저장(`/session-save`). 카테고리 필터 지원(선택 기능).
 - **`herald-vault` 도구** — 세션기록을 한 저장소로 모으고 색인·검색한다. 일반 호스트는 **올리기만** 하고 읽지 못하는 단방향 구조. → 아래 「herald-vault 도구」 절
 - **동반 환경 명세** — 이 저장소는 알림 도구이면서 **"clone 한 맥이 어떤 환경이어야 하는가"** 의 명세이기도 합니다. `bootstrap/herald-env-setup.sh` 한 줄로 무엇이 빠졌는지 점검하고 채웁니다(OMC 플러그인 · HUD 상태줄 설정). → [자세히](docs/ENVIRONMENT.md)
+- **`ha-we` 작업환경 배포** — "작업 디렉토리 한 벌" 을 이름과 버전으로 배포한다. `ha-we-work_ppt` 처럼 부르면 **기억·인계 절차가 자족적으로 들어 있는** 디렉토리가 펼쳐진다. → 아래 「ha-we」 절
 - **`trip-ledger` 스킬** — 여행·출장 지출을 노트 → 구글시트 원장 → 구글맵 목록으로 잇는 파이프라인. **막혔던 길을 다시 가지 않도록** 검증된 경로와 재시도 금지 경로를 저장소에 축적해 여러 Mac 이 공유한다. → [자세히](#-trip-ledger--여행출장-지출-원장)
 
 ## 📦 요구 사항
@@ -326,6 +327,45 @@ herald-ai 는 공개 저장소이므로, 시트 ID·구글맵 컬렉션 ID 같�
 `SKILL.md` 0단계가 실행 중인 Mac 이 원본인지 사본인지 먼저 판정하고,
 사본이면 수정 요청을 파일로 넘기는 인계 절차(§5)로 유도합니다.
 
+## 🗂️ ha-we — 작업환경(work_env) 배포
+
+스킬·훅·규약은 이 저장소가 배포해 어느 맥에서든 같아집니다. 그런데 **일을 하는 디렉토리 자체**는
+매번 손으로 다시 만들었습니다 — 진행 기록을 어디 두는지, 산출물 버전을 어떻게 매기는지,
+**기억을 어떻게 따라오게 하는지**. `ha-we` 는 그 한 벌을 이름과 버전으로 배포합니다.
+
+`ha`=herald-ai · `we`=work_env. 개별 환경은 **`ha-we-<id>`** 로 부릅니다.
+
+```bash
+ha-we list                       # 등록된 작업환경 — 짧은 이름 + 최신 버전
+ha-we show work_ppt              # 구성 내용·인자
+ha-we diff work_ppt 0.1 0.2      # 버전 간 차이 (왜 바꿨나 + 파일 diff)
+
+# 뿌리기 — 기본은 모의 실행. --apply 를 줄 때만 만든다
+ha-we init work_ppt ~/Desktop/새프로젝트 --name "특허 발표" --goal "..." --due 2026-12-01
+ha-we init work_ppt ~/Desktop/새프로젝트 --name "..." --goal "..." --apply --with-convention
+```
+
+| 환경 | 무엇을 만드는가 | 산출물 |
+|---|---|---|
+| **`ha-we-work_ppt`** | 여러 맥을 오가며 발표자료를 만드는 작업 디렉토리 | `.pptx` + 동명 `.md` |
+
+**핵심은 연속성입니다.** Claude Code 의 대화 기록도, 홈의 기억 폴더도 컴퓨터 간에 동기화되지
+않습니다. `ha-we` 가 뿌리는 디렉토리는 **이어받는 방법을 자기 안에 들고 있습니다** — 세션 시작
+절차가 `CLAUDE.md` 에 있고, 기억은 `.claude/hooks/sync-memory.sh` 가 프로젝트 사본과 양방향으로
+동기화합니다. 이 훅은 슬러그를 프로젝트 경로에서 계산하므로 **어느 맥·어느 경로에 두어도** 대응합니다.
+
+- **버전** — 환경마다 자기 버전(`0.1` 시작, 기본은 minor 만 +1). 이름만 부르면 최신이 쓰이고,
+  `-v 0.1` 로 옛 버전을 그대로 꺼낼 수 있습니다. ⚠️ **「v3.1 커밋 체계」와 별개 체계**입니다.
+- **기본이 모의 실행**이고, **기존 파일은 절대 덮지 않습니다**(멱등).
+- **git 은 만들지 않습니다** — `git init` 위치는 동기화 수단과 얽힌 판단이라 사용자가 정합니다.
+
+```bash
+bash bootstrap/ha-we-register.sh   # "ha-we" 호출어를 글로벌 지침에 등록 (멱등·--check·--revert)
+```
+
+체계·사용법의 정본은 [`docs/WORK-ENV.md`](docs/WORK-ENV.md), 목록은
+[`work-env/REGISTRY.md`](work-env/REGISTRY.md).
+
 ## 🧹 제거
 
 ```bash
@@ -347,6 +387,7 @@ bash uninstall.sh   # settings.json 의 herald 훅만 제거(스킬 보존)
 - **[docs/ENVIRONMENT.md](docs/ENVIRONMENT.md)** — 새 맥에서 같은 환경 만들기(동반 구성요소·HUD 설정).
 - **[docs/SKILLS.md](docs/SKILLS.md)** — 이 환경에서 쓰는 스킬 목록(herald-ai · OMC · superpowers)과 역할.
 - **[docs/COMMIT-CONVENTION.md](docs/COMMIT-CONVENTION.md)** — 여러 저장소 공통 커밋·버전 규약 **v3.1.0** 정본. 호출어 "v3.1 커밋 체계".
+- **[docs/WORK-ENV.md](docs/WORK-ENV.md)** — 작업환경 `ha-we-<id>` 체계 정본. 호출어 "ha-we".
 
 > **현재 버전은 [`VERSION`](VERSION) 파일에서 확인합니다.** 여기에 숫자를 옮겨 적지 않습니다 —
 > 두 곳에 적으면 반드시 한쪽이 낡습니다 (실제로 두 번 낡았습니다).

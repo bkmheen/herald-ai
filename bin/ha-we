@@ -1,0 +1,510 @@
+#!/usr/bin/env python3
+"""ha-we — herald-ai(ha) 작업환경(work_env) 배포 도구.
+
+무엇인가
+    "작업 디렉토리 한 벌" 을 이름과 버전으로 관리한다. 개별 환경은 `ha-we-<id>` 로 부른다.
+    예: `ha-we-work_ppt` = 로컬 디렉토리에서 발표자료 만들기.
+
+    코드 저장소 템플릿이 아니다. 대화 기록도 홈의 기억 폴더도 컴퓨터 간에 동기화되지 않으므로,
+    **이어받는 방법이 디렉토리 안에 자족적으로 들어 있는** 작업 디렉토리를 만든다.
+
+버전
+    각 환경은 자기 버전을 가진다. `0.1` 에서 시작하고, 특별한 지시가 없으면 **major 는 그대로
+    두고 minor 만 1씩** 올린다 (`0.1` → `0.2` → `0.3`). major 는 사용자 지시가 있을 때만.
+    이는 저장소 커밋 규약(v3.1 커밋 체계)과 **별개 체계**다 — 섞지 않는다.
+
+사용
+    ha-we list                              등록된 작업환경 목록
+    ha-we versions <id>                     그 환경의 버전 목록
+    ha-we show <id> [-v VER]                구성 내용 (기본: 최신)
+    ha-we diff <id> <old> <new>             버전 간 차이
+    ha-we init <id> <대상> [옵션]            디렉토리에 뿌린다 (기본 모의 실행)
+    ha-we bump <id> [--major] -m "요약"      최신을 복사해 새 버전을 연다
+
+예
+    ha-we list
+    ha-we init work_ppt ~/Desktop/새프로젝트 --name "특허 발표" --goal "..." --due 2026-12-01
+    ha-we init work_ppt ~/Desktop/새프로젝트 --name "..." --goal "..." --apply
+    ha-we diff work_ppt 0.1 0.2
+"""
+
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from datetime import date
+
+# ── 저장소 위치 ───────────────────────────────────────────────────────────────
+# 이 스크립트는 repo 의 bin/ 에도, 설치된 ~/.herald/bin/ 에도 있을 수 있다.
+# repo 안이면 자기 위치로 찾고, 설치본이면 알려진 후보를 훑는다.
+def find_repo():
+    here = os.path.dirname(os.path.abspath(os.path.realpath(__file__)))
+    cand = [os.path.dirname(here)]                       # <repo>/bin/ha-we
+    env = os.environ.get("HERALD_AI_DIR")
+    if env:
+        cand.insert(0, os.path.expanduser(env))
+    home = os.path.expanduser("~")
+    cand += [os.path.join(home, "Code", "herald-ai"),
+             os.path.join(home, "herald-ai"),
+             os.path.join(home, "src", "herald-ai")]
+    for c in cand:
+        if os.path.isdir(os.path.join(c, "work-env")):
+            return c
+    return None
+
+
+REPO = find_repo()
+WE_DIR = os.path.join(REPO, "work-env") if REPO else None
+
+BOLD, DIM, RESET = "\033[1m", "\033[2m", "\033[0m"
+if not sys.stdout.isatty():
+    BOLD = DIM = RESET = ""
+
+
+def die(msg, code=1):
+    print("❌ %s" % msg, file=sys.stderr)
+    sys.exit(code)
+
+
+def need_repo():
+    if not WE_DIR:
+        die("herald-ai 저장소를 찾지 못했습니다. HERALD_AI_DIR 로 경로를 지정하십시오.")
+
+
+def ver_key(v):
+    """'0.10' 이 '0.9' 보다 크도록 숫자로 비교한다."""
+    try:
+        return tuple(int(x) for x in v.split("."))
+    except ValueError:
+        return (0, 0)
+
+
+def versions_of(env_id):
+    root = os.path.join(WE_DIR, env_id)
+    if not os.path.isdir(root):
+        die("그런 작업환경이 없습니다: %s  (`ha-we list` 로 확인)" % env_id)
+    vs = [d for d in os.listdir(root)
+          if re.fullmatch(r"\d+\.\d+", d) and os.path.isdir(os.path.join(root, d))]
+    return sorted(vs, key=ver_key)
+
+
+def latest_of(env_id):
+    """LATEST 파일을 우선하되, 실제 디렉토리와 어긋나면 디렉토리 쪽을 믿는다."""
+    vs = versions_of(env_id)
+    if not vs:
+        die("%s 에 버전 디렉토리가 없습니다." % env_id)
+    p = os.path.join(WE_DIR, env_id, "LATEST")
+    if os.path.isfile(p):
+        v = open(p, encoding="utf-8").read().strip()
+        if v in vs:
+            return v
+        print("⚠️  LATEST(%s) 가 실제 버전과 다릅니다 — %s 를 씁니다." % (v, vs[-1]),
+              file=sys.stderr)
+    return vs[-1]
+
+
+def load_manifest(env_id, ver):
+    p = os.path.join(WE_DIR, env_id, ver, "manifest.json")
+    if not os.path.isfile(p):
+        die("manifest 가 없습니다: %s" % p)
+    return json.load(open(p, encoding="utf-8"))
+
+
+# manifest 의 인자 키 → 실제 CLI 플래그. 다르게 부르는 것만 적는다.
+FLAG_ALIAS = {"PROJECT_NAME": "name"}
+
+
+def flag_of(key):
+    return FLAG_ALIAS.get(key, key.lower().replace("_", "-"))
+
+
+def load_registry():
+    p = os.path.join(WE_DIR, "registry.json")
+    if not os.path.isfile(p):
+        die("registry.json 이 없습니다: %s" % p)
+    return json.load(open(p, encoding="utf-8"))
+
+
+# ── list ─────────────────────────────────────────────────────────────────────
+def cmd_list(a):
+    need_repo()
+    reg = load_registry()
+    envs = reg.get("environments", [])
+    if not envs:
+        print("등록된 작업환경이 없습니다.")
+        return 0
+    print("%sha-we — herald-ai 작업환경 (work_env)%s" % (BOLD, RESET))
+    print()
+    for e in envs:
+        eid = e["id"]
+        try:
+            vs = versions_of(eid)
+            cur = latest_of(eid)
+            vtxt = "v%s  %s(%d개 버전)%s" % (cur, DIM, len(vs), RESET)
+        except SystemExit:
+            vtxt = "%s(버전 없음)%s" % (DIM, RESET)
+        print("  %sha-we-%s%s" % (BOLD, eid, RESET))
+        print("      %s" % e.get("title", ""))
+        print("      %s" % vtxt)
+        if e.get("summary"):
+            print("      %s%s%s" % (DIM, e["summary"], RESET))
+        print()
+    print("%s자세히: ha-we show <id>   ·   뿌리기: ha-we init <id> <대상 디렉토리>%s"
+          % (DIM, RESET))
+    return 0
+
+
+# ── versions ─────────────────────────────────────────────────────────────────
+def cmd_versions(a):
+    need_repo()
+    vs = versions_of(a.id)
+    cur = latest_of(a.id)
+    print("%sha-we-%s%s 버전" % (BOLD, a.id, RESET))
+    print()
+    for v in vs:
+        mark = " ← 최신" if v == cur else ""
+        m = load_manifest(a.id, v)
+        print("  v%-6s %s%s" % (v, m.get("summary", "")[:60], mark))
+    return 0
+
+
+# ── show ─────────────────────────────────────────────────────────────────────
+def cmd_show(a):
+    need_repo()
+    ver = a.version or latest_of(a.id)
+    if ver not in versions_of(a.id):
+        die("그런 버전이 없습니다: %s v%s  (`ha-we versions %s`)" % (a.id, ver, a.id))
+    m = load_manifest(a.id, ver)
+    print("%sha-we-%s v%s%s — %s" % (BOLD, a.id, ver, RESET, m.get("title", "")))
+    print()
+    print("  %s" % m.get("summary", ""))
+    print()
+    if m.get("origin"):
+        print("  출처   : %s" % m["origin"])
+    print("  생성   : %s" % m.get("created", "?"))
+    d = m.get("deliverable") or {}
+    if d:
+        print("  산출물 : %s (.%s%s)" % (d.get("kind", "?"), d.get("ext", "?"),
+                                        " + 동명 .%s" % d["pairs_with"] if d.get("pairs_with") else ""))
+    print()
+    print("  %s만드는 것%s" % (BOLD, RESET))
+    for c in m.get("creates", []):
+        print("    - %s" % c)
+    print()
+    print("  %s인자%s  (ha-we init 에 붙입니다)" % (BOLD, RESET))
+    for k, v in (m.get("params") or {}).items():
+        req = "필수" if v.get("required") else "선택"
+        dv = "" if v.get("default") in (None, "") else "  (기본: %s)" % v["default"]
+        print("    --%-16s [%s] %s%s" % (flag_of(k), req, v.get("desc", ""), dv))
+    ch = os.path.join(WE_DIR, a.id, ver, "CHANGES.md")
+    if os.path.isfile(ch):
+        print()
+        print("  변경 기록: %s" % ch)
+    return 0
+
+
+# ── diff ─────────────────────────────────────────────────────────────────────
+def cmd_diff(a):
+    need_repo()
+    vs = versions_of(a.id)
+    for v in (a.old, a.new):
+        if v not in vs:
+            die("그런 버전이 없습니다: %s v%s  (있는 것: %s)" % (a.id, v, ", ".join(vs)))
+    p_old = os.path.join(WE_DIR, a.id, a.old)
+    p_new = os.path.join(WE_DIR, a.id, a.new)
+    print("%sha-we-%s  v%s → v%s%s" % (BOLD, a.id, a.old, a.new, RESET))
+    print()
+    ch = os.path.join(p_new, "CHANGES.md")
+    if os.path.isfile(ch):
+        print("%s── v%s 의 변경 기록 %s%s" % (DIM, a.new, "─" * 40, RESET))
+        print(open(ch, encoding="utf-8").read().rstrip())
+        print()
+    print("%s── 파일 차이 %s%s" % (DIM, "─" * 48, RESET))
+    sys.stdout.flush()
+    r = subprocess.run(["diff", "-ru", p_old, p_new],
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    out = r.stdout.decode("utf-8", "replace")
+    print(out.rstrip() if out.strip() else "  (파일 차이 없음)")
+    return 0
+
+
+# ── init ─────────────────────────────────────────────────────────────────────
+PLACEHOLDER = re.compile(r"\{\{([A-Z_]+)\}\}")
+
+
+def render(text, vals):
+    return PLACEHOLDER.sub(lambda m: vals.get(m.group(1), m.group(0)), text)
+
+
+def is_text(path):
+    try:
+        with open(path, "rb") as f:
+            return b"\0" not in f.read(4096)
+    except OSError:
+        return False
+
+
+CONVENTION_SECTION = """
+## 커밋·버전 규약
+
+> 커밋·버전 규약은 [CLAUDE.convention.md](CLAUDE.convention.md) 를 따릅니다 (규약 v3.1.0).
+
+- 현재 버전의 단일 출처는 [`VERSION`](VERSION). 변경 요약은 [`CHANGELOG.md`](CHANGELOG.md),
+  배경·의사결정은 [`DEVLOG.md`](DEVLOG.md) 에 남긴다.
+- 사용자가 **"v3.1 커밋 체계"** 라고 하면 정본(herald-ai `docs/COMMIT-CONVENTION.md`)의
+  「호출됐을 때 할 일」 7단계를 수행한다. 정본이 없는 맥에서는 `CLAUDE.convention.md` 만으로 커밋한다.
+- **커밋은 사용자 명시 요청 시에만.** push 도 마찬가지.
+"""
+
+
+def link_convention(target):
+    """규약 도입 뒤 CLAUDE.md 에 연결 절을 붙인다.
+
+    herald-convention-init.sh 는 남의 CLAUDE.md 를 건드리지 않는 것이 원칙이라
+    "이 한 줄을 직접 넣으십시오" 라고 안내만 한다. 그런데 그 CLAUDE.md 는 방금 ha-we 가
+    만든 것이므로, 여기서는 우리가 책임지고 이어 붙인다.
+    """
+    p = os.path.join(target, "CLAUDE.md")
+    if not os.path.isfile(p):
+        return
+    body = open(p, encoding="utf-8").read()
+    if "CLAUDE.convention.md" in body:
+        print("  ↷ CLAUDE.md — 규약 절이 이미 있음")
+        return
+    anchor = "\n## 프로젝트 목표"
+    if anchor in body:
+        body = body.replace(anchor, CONVENTION_SECTION + anchor, 1)
+    else:
+        body = body.rstrip() + "\n" + CONVENTION_SECTION
+    with open(p, "w", encoding="utf-8") as f:
+        f.write(body)
+    print("  ✅ CLAUDE.md 에 「커밋·버전 규약」 절 추가")
+
+
+def cmd_init(a):
+    need_repo()
+    ver = a.version or latest_of(a.id)
+    if ver not in versions_of(a.id):
+        die("그런 버전이 없습니다: %s v%s  (`ha-we versions %s`)" % (a.id, ver, a.id))
+    m = load_manifest(a.id, ver)
+    tpl = os.path.join(WE_DIR, a.id, ver, "template")
+    if not os.path.isdir(tpl):
+        die("template 디렉토리가 없습니다: %s" % tpl)
+
+    target = os.path.abspath(os.path.expanduser(a.target))
+
+    # 인자 값 채우기 — CLI 인자 > manifest 기본값
+    params = m.get("params") or {}
+    vals = {}
+    for k, spec in params.items():
+        cli = getattr(a, k.lower(), None)
+        if cli:
+            vals[k] = cli
+        elif spec.get("default") not in (None, ""):
+            vals[k] = spec["default"]
+        elif spec.get("required"):
+            die("필수 인자가 빠졌습니다: --%s  (%s)" % (flag_of(k), spec.get("desc", "")))
+        else:
+            vals[k] = ""
+    vals.setdefault("PROJECT_NAME", os.path.basename(target))
+    vals["DATE"] = a.date or date.today().isoformat()
+    vals["WE_ID"] = a.id
+    vals["WE_VERSION"] = ver
+
+    print("── ha-we-%s v%s 설치 %s" % (a.id, ver, "─" * 28))
+    print("  대상: %s" % target)
+    for k in ("PROJECT_NAME", "GOAL", "DUE"):
+        if vals.get(k):
+            print("  %-13s %s" % (k + ":", vals[k]))
+    if not a.apply:
+        print("  모드: 모의 실행 — 실제로 만들려면 --apply")
+    print()
+
+    if not os.path.isdir(target):
+        if a.apply:
+            os.makedirs(target, exist_ok=True)
+            print("  ✅ 대상 디렉토리 생성")
+        else:
+            print("  ✅ 대상 디렉토리 생성 예정")
+
+    made, skipped = 0, 0
+    for root, dirs, files in os.walk(tpl):
+        dirs.sort()
+        for fn in sorted(files):
+            src = os.path.join(root, fn)
+            rel = os.path.relpath(src, tpl)
+            # 저장소 보관용 이름 → 실제 이름
+            parts = rel.split(os.sep)
+            if parts[0] == "dot-claude":
+                parts[0] = ".claude"
+            if parts[-1] == "_gitignore":
+                parts[-1] = ".gitignore"
+            rel_out = os.sep.join(render(p, vals) for p in parts)
+            # 디렉토리 이름 자체가 인자인 경우 (10. 발표자료 → 사용자 지정)
+            rel_out = rel_out.replace("10. 발표자료", vals.get("DELIVERABLE_DIR", "10. 발표자료"))
+            rel_out = rel_out.replace("90. 진행상황", vals.get("PROGRESS_DIR", "90. 진행상황"))
+            rel_out = rel_out.replace("91. Claude 기억", vals.get("MEMORY_DIR", "91. Claude 기억"))
+            dst = os.path.join(target, rel_out)
+
+            if os.path.exists(dst):
+                print("  ↷ %s — 이미 있음, 건드리지 않음" % rel_out)
+                skipped += 1
+                continue
+            if not a.apply:
+                print("  ✅ %s 생성 예정" % rel_out)
+                made += 1
+                continue
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            if is_text(src):
+                body = render(open(src, encoding="utf-8").read(), vals)
+                with open(dst, "w", encoding="utf-8") as f:
+                    f.write(body)
+            else:
+                shutil.copy2(src, dst)
+            if fn.endswith(".sh"):
+                os.chmod(dst, 0o755)
+            print("  ✅ %s 생성" % rel_out)
+            made += 1
+
+    print()
+    print("  %d개 %s · %d개 건너뜀" % (made, "생성" if a.apply else "생성 예정", skipped))
+
+    if a.with_convention:
+        conv = os.path.join(REPO, "bootstrap", "herald-convention-init.sh")
+        print()
+        print("── 커밋 규약 v3.1.0 이어서 %s" % ("─" * 22))
+        if not os.path.isfile(conv):
+            print("  ⚠️  herald-convention-init.sh 를 찾지 못했습니다: %s" % conv)
+        elif not os.path.isdir(target):
+            # 모의 실행이라 대상이 아직 없다. 스크립트는 cd 로 대상을 여므로 여기서 부르면 죽는다.
+            print("  ✅ VERSION(0.1.10) · CHANGELOG.md · DEVLOG.md · CLAUDE.convention.md 생성 예정")
+            print("  ✅ CLAUDE.md 에 「커밋·버전 규약」 절 추가 예정")
+        else:
+            # 파이프로 받을 때 파이썬 stdout 은 블록 버퍼링이라, 비우지 않으면
+            # 하위 스크립트 출력이 우리 출력보다 먼저 찍혀 순서가 뒤바뀐다.
+            sys.stdout.flush()
+            subprocess.run(["bash", conv, target] + (["--apply"] if a.apply else []))
+            if a.apply:
+                link_convention(target)
+
+    print()
+    if a.apply:
+        print("다음 단계:")
+        print("  1) %s/CLAUDE.md 의 목표·기한을 확인합니다." % target)
+        print("  2) Claude Code 를 그 디렉토리에서 열면 훅 신뢰 확인 창이 뜹니다 → 허용.")
+        print("     (훅은 새 세션부터 활성화됩니다. 기억 복원은 그때부터 동작합니다.)")
+        print("  3) git 은 만들지 않았습니다. 필요하면 동기화 수단을 정한 뒤 git init 합니다.")
+    else:
+        print("실제로 만들려면 --apply 를 붙여 다시 실행하십시오.")
+    print("─" * 46)
+    return 0
+
+
+# ── bump ─────────────────────────────────────────────────────────────────────
+def cmd_bump(a):
+    need_repo()
+    cur = latest_of(a.id)
+    maj, mnr = (int(x) for x in cur.split("."))
+    new = "%d.0" % (maj + 1) if a.major else "%d.%d" % (maj, mnr + 1)
+    root = os.path.join(WE_DIR, a.id)
+    src, dst = os.path.join(root, cur), os.path.join(root, new)
+    if os.path.exists(dst):
+        die("이미 있습니다: %s v%s" % (a.id, new))
+
+    print("── ha-we-%s  v%s → v%s %s" % (a.id, cur, new, "─" * 20))
+    if not a.apply:
+        print("  모드: 모의 실행 — 실제로 만들려면 --apply")
+        print("  ✅ %s 를 %s 로 복사 예정" % (cur, new))
+        print("  ✅ manifest.json 의 version 을 %s 로" % new)
+        print("  ✅ CHANGES.md 를 새로 작성 (요약: %s)" % (a.message or "미지정"))
+        print("  ✅ LATEST → %s" % new)
+        print("─" * 46)
+        return 0
+
+    shutil.copytree(src, dst)
+    mp = os.path.join(dst, "manifest.json")
+    m = json.load(open(mp, encoding="utf-8"))
+    m["version"] = new
+    m["created"] = a.date or date.today().isoformat()
+    json.dump(m, open(mp, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    open(mp, "a", encoding="utf-8").write("\n")
+    with open(os.path.join(dst, "CHANGES.md"), "w", encoding="utf-8") as f:
+        f.write("# ha-we-%s v%s\n\n- 일자: %s\n- 이전: v%s\n\n## 무엇이 바뀌었나\n\n- %s\n\n"
+                "## 왜 바꿨나\n\n- (근거를 적습니다. 무엇을 했는지가 아니라 왜 그렇게 정했는지.)\n"
+                % (a.id, new, m["created"], cur, a.message or "(요약 미기재 — 채워 넣으십시오)"))
+    with open(os.path.join(root, "LATEST"), "w", encoding="utf-8") as f:
+        f.write(new + "\n")
+    print("  ✅ v%s 생성 — %s" % (new, dst))
+    print("  ✅ LATEST → %s" % new)
+    print()
+    print("다음: template/ 를 고치고 CHANGES.md 에 '왜' 를 적으십시오.")
+    print("─" * 46)
+    return 0
+
+
+# ── 인자 ─────────────────────────────────────────────────────────────────────
+def main():
+    p = argparse.ArgumentParser(
+        prog="ha-we", description="herald-ai 작업환경(work_env) 배포 도구",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__.split("사용\n")[-1])
+    sub = p.add_subparsers(dest="cmd")
+
+    sp = sub.add_parser("list", help="등록된 작업환경 목록")
+    sp.set_defaults(fn=cmd_list)
+
+    sp = sub.add_parser("versions", help="버전 목록")
+    sp.add_argument("id")
+    sp.set_defaults(fn=cmd_versions)
+
+    sp = sub.add_parser("show", help="구성 내용 (기본: 최신 버전)")
+    sp.add_argument("id")
+    sp.add_argument("-v", "--version")
+    sp.set_defaults(fn=cmd_show)
+
+    sp = sub.add_parser("diff", help="버전 간 차이")
+    sp.add_argument("id")
+    sp.add_argument("old")
+    sp.add_argument("new")
+    sp.set_defaults(fn=cmd_diff)
+
+    sp = sub.add_parser("init", help="디렉토리에 뿌린다 (기본 모의 실행)")
+    sp.add_argument("id")
+    sp.add_argument("target", help="대상 디렉토리")
+    sp.add_argument("-v", "--version", help="기본: 최신")
+    sp.add_argument("--apply", action="store_true", help="실제로 만든다")
+    sp.add_argument("--with-convention", action="store_true",
+                    help="커밋 규약 v3.1.0 까지 이어서 도입")
+    sp.add_argument("--name", dest="project_name", help="프로젝트 이름")
+    sp.add_argument("--goal", dest="goal", help="한 줄 목표")
+    sp.add_argument("--due", dest="due", help="기한")
+    sp.add_argument("--deliverable-dir", dest="deliverable_dir")
+    sp.add_argument("--progress-dir", dest="progress_dir")
+    sp.add_argument("--memory-dir", dest="memory_dir")
+    sp.add_argument("--date", help="생성일 (기본: 오늘)")
+    sp.set_defaults(fn=cmd_init)
+
+    sp = sub.add_parser("bump", help="최신을 복사해 새 버전을 연다")
+    sp.add_argument("id")
+    sp.add_argument("--major", action="store_true",
+                    help="major 를 올린다 (기본은 minor +1)")
+    sp.add_argument("-m", "--message", help="변경 요약 한 줄")
+    sp.add_argument("--apply", action="store_true", help="실제로 만든다")
+    sp.add_argument("--date")
+    sp.set_defaults(fn=cmd_bump)
+
+    a = p.parse_args()
+    if not a.cmd:
+        p.print_help()
+        return 2
+    return a.fn(a)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(130)
