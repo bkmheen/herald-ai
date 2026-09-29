@@ -1,7 +1,7 @@
 {
   "id": "ppt_gen",
   "version": "0.3",
-  "title": "원본 자료로 PPT 를 생성하는 작업 디렉토리 (여러 LLM 협업)",
+  "title": "사용자 자료로 PPT 를 생성하는 작업 디렉토리 (여러 LLM 협업)",
   "summary": "사용자 자료 디렉토리(읽기 전용)와 reference/(LLM 이 기록을 남기는 조건으로 자체 관리)를 나눠 입력을 두 층으로 둔다. LLM 마다 자기 작업공간을 갖고, 공용 .llm/ 로 서로의 진행과 판단을 읽고 이어받는다.",
   "created": "2026-09-29",
   "renamed_from": "work_ppt (v0.1 까지)",
@@ -29,7 +29,7 @@
     },
     "SOURCE_DIR": {
       "required": false,
-      "desc": "원본 자료 디렉토리 이름. 읽기 전용으로 취급한다",
+      "desc": "사용자 자료 디렉토리 이름. 사용자가 넣은 자료를 두며 LLM 은 읽기만 한다",
       "default": "source"
     },
     "LLM_ID": {
