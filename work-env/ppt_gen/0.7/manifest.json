@@ -1,0 +1,81 @@
+{
+  "id": "ppt_gen",
+  "version": "0.7",
+  "title": "사용자 자료로 PPT 를 생성하는 작업 디렉토리 (여러 LLM 협업)",
+  "summary": "사용자 자료 디렉토리(읽기 전용)와 reference/(LLM 이 기록을 남기는 조건으로 자체 관리)를 나눠 입력을 두 층으로 둔다. 자료마다 두 자리 번호를 붙여 입력·재료·스크립트·산출물이 같은 번호를 공유한다. LLM 마다 자기 작업공간을 갖고, 공용 .llm/ 로 서로의 진행과 판단을 읽고 이어받는다. 현재 상태는 BOARD.md, 지나온 경과는 날짜별 PROGRESS.md 가 나눠 맡는다. 산출물은 pptx·pdf·md·py 를 같은 이름으로 함께 두고, pdf 는 언제나 함께 만든다. 모든 pptx 는 표지에 버전, 2쪽에 개정 이력, 모든 쪽에 머리말·꼬리말(제목·버전·저자·소속·쪽수)을 둔다.",
+  "created": "2026-09-29",
+  "renamed_from": "work_ppt (v0.1 까지)",
+  "origin": "260927_docs (스크린샷 기반 가이드 매뉴얼 4종 프로젝트) 와 work_ppt v0.1 을 합쳐 재구성",
+  "deliverable": {
+    "kind": "PPT",
+    "ext": "pptx",
+    "pairs_with": "pdf (필수) · md (필수) · py (코드로 만들면 필수) — 확장자만 다르고 이름이 같다",
+    "pdf_command": "soffice --headless --convert-to pdf --outdir <dir> <file>.pptx",
+    "layout": {
+      "cover": "제목 · 부제 · 버전 v0.0 · 발행일 · 저자 · 소속 · 생성형 AI 사용 고지",
+      "page2": "개정 이력 (버전 · 일자 · 핵심 변경)",
+      "header": "왼쪽 제목 / 오른쪽 v버전 · 발행일",
+      "footer": "왼쪽 저자 · 소속 / 오른쪽 n / N",
+      "before_sources": "AI 사용 내역 (모델 · 맡은 일 · 시점)"
+    }
+  },
+  "params": {
+    "PROJECT_NAME": {
+      "required": true,
+      "desc": "프로젝트 이름. 진입점 문서 제목에 들어간다",
+      "default": null
+    },
+    "GOAL": {
+      "required": true,
+      "desc": "한 줄 목표. 어떤 PPT 를 만드는가",
+      "default": null
+    },
+    "DUE": {
+      "required": false,
+      "desc": "기한 (YYYY-MM-DD 또는 자유 문구)",
+      "default": "미정"
+    },
+    "SOURCE_DIR": {
+      "required": false,
+      "desc": "사용자 자료 디렉토리 이름. 사용자가 넣은 자료를 두며 LLM 은 읽기만 한다",
+      "default": "source"
+    },
+    "LLM_ID": {
+      "required": false,
+      "desc": "첫 작업공간 이름 (소문자). 이 LLM 의 작업공간과 개별 기억이 만들어진다",
+      "default": "claude"
+    }
+  },
+  "creates": [
+    "CLAUDE.md",
+    "GEMINI.md",
+    "AGENTS.md",
+    ".gitignore",
+    "<SOURCE_DIR>/README.md",
+    "reference/README.md",
+    ".llm/README.md",
+    ".llm/BOARD.md",
+    ".llm/PROGRESS.md",
+    ".llm/memory/00_INDEX.md",
+    ".llm/memory/01_프로젝트_개요.md",
+    ".llm/memory/10_사용자_작업_방식.md",
+    ".llm/memory/20_자료_규칙.md",
+    ".llm/memory/25_번호_규칙.md",
+    ".llm/memory/30_산출물_및_버전_규칙.md",
+    ".llm/memory/40_LLM_협업_규칙.md",
+    ".llm/memory/45_진행기록_작성법.md",
+    ".llm/memory/50_이관_작업절차.md",
+    ".llm/sessions/README.md",
+    ".llm/agents/<LLM_ID>/memory/00_INDEX.md",
+    ".llm/agents/<LLM_ID>/sessions/README.md",
+    "<LLM_ID>/README.md",
+    "<LLM_ID>/STATUS.md",
+    "<LLM_ID>/__history__/README.md"
+  ],
+  "requires": [
+    "bash",
+    "rsync (없으면 cp 폴백)",
+    "python3 (없으면 grep 폴백)"
+  ],
+  "pairs_with_convention": true
+}

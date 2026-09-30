@@ -1,0 +1,13 @@
+# 컴퓨터별 임시 상태 — 저장소에 넣지 않는다
+.DS_Store
+.omc/
+.session-logs/
+__pycache__/
+*.pyc
+
+# 가상환경 (절대경로가 박혀 이식되지 않는다. requirements 로 재생성한다)
+venv/
+.venv/
+
+# 검증용 중간 산출물 — 지워도 되는 것만 여기에 적는다
+**/build/
