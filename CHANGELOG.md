@@ -7,6 +7,34 @@
 > (`patch = 묶음×10 + 커밋`)로 다시 매겨졌습니다. 최초 항목이 `0.2.10`, 이후 빈틈없이 순차 증가하며
 > **역행 구간이 없습니다.** 옛 번호(`0.1.0`~`0.9.202`)는 더 이상 쓰이지 않습니다.
 
+## [0.2.70] - 2026-09-30
+
+### Added
+- `ppt_gen` **v0.9** — **규칙을 실행 가능한 템플릿으로 만들었다.** v0.6~v0.8 이 글로 정한 것을
+  `.llm/templates/template_2609/` 한 벌이 자동으로 수행한다.
+  - `template_2609.py` (md → pptx·pdf 생성기) · `template_2609.md` (골격이 든 빈 자료) ·
+    `README.md` (사용법 · md 문법 · 환경 의존 · 유래)
+  - 쓰는 법은 **두 파일을 복사하고 상수 여섯 줄**(`NUMBER`·`TITLE`·`VERSION`·`DATE`·
+    `AUTHOR`·`AFFIL`)**만 고치는 것**이다. 표지·개정 이력·머리말·꼬리말·pdf 변환·
+    이전 버전 `__history__/` 이동이 모두 자동이다
+  - ⛔ **특별한 지정이 없으면 이 템플릿으로 만든다** — `30_산출물_및_버전_규칙.md` 에
+    「기본 템플릿」 절을 신설하고, 진입점 **3종**과 `memory/00_INDEX.md` 에 같은 안내를 넣었다
+  - ⛔ **저자·소속은 사용자에게 묻고 고정**한다. 템플릿의 `<저자>`·`<소속>` 을 그대로 두지 않는다
+  - `manifest.json` 에 `deliverable.default_template` 과 `creates` 3개 항목 추가
+  - **유래**: 이 서식은 **글로벌TOP 연구사업 관련자료로 처음 사용되었다**(2026-09-30)
+
+### Changed
+- `ha-we init` 이 만드는 파일이 **24개 → 27개** (템플릿 세 파일 추가).
+  `manifest`·`registry` summary 에 반영했다 (`ha-we list` 출력에 보인다).
+
+### Verified
+- `python3 -m json.tool` — `work-env/ppt_gen/0.9/manifest.json` · `work-env/registry.json` 통과
+- 빈 디렉토리에 `ha-we init ppt_gen <임시경로> --apply` → **27개 생성 · 0개 건너뜀**,
+  치환 잔여 `{{...}}` 0건, `.llm/templates/template_2609/` 세 파일 존재
+- **그 자리에서 템플릿을 복사해 실행** → `98. 설치검증_v0.1` 의 **pptx 8장 · pdf 8쪽 · md · py**
+  네 파일 생성 확인. 검증 후 임시 디렉토리 삭제
+- `grep -rn "Bongki\|ETRI" work-env/ppt_gen/0.9/` → 없음 (저자·소속은 플레이스홀더)
+
 ## [0.2.69] - 2026-09-30
 
 ### Changed
