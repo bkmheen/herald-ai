@@ -7,6 +7,25 @@
 > (`patch = 묶음×10 + 커밋`)로 다시 매겨졌습니다. 최초 항목이 `0.2.10`, 이후 빈틈없이 순차 증가하며
 > **역행 구간이 없습니다.** 옛 번호(`0.1.0`~`0.9.202`)는 더 이상 쓰이지 않습니다.
 
+## [0.2.72] - 2026-10-31
+
+### Added
+- **`marvis` · `dirmem` — 디렉토리 이식형 다중 LLM 작업 환경** ([docs/DIRMEM.md](docs/DIRMEM.md)).
+  - `bin/dirmem` — 폴더 `AI_MEMORY/` 에 기억(MEMORY)·현황(STATUS)·세션별 일지. 공유 파일은 잠금 후 추가 전용
+  - `bin/marvis` — `marvis llm claude|codex|gemini [-w]`. 자체 기억 OFF(실행 옵션), 세션 일지 생성·기억 주입,
+    폴더 유형 자동 판별(자체 실행기 프로젝트 위임 / `.llm/` 등 자체 체계 보존 / dirmem), `-w` 새 iTerm 창,
+    `marvis mode parallel|single|auto` (`.marvis.conf`)
+  - `bin/dirmem-transcripts` — Claude·Codex 대화 원문을 폴더 안에 보관하고 다른 맥·옮긴 경로에서 복원
+    (옛 경로·slug 치환)
+  - `templates/dirmem/` — 폴더 진입점(AGENTS·CLAUDE·GEMINI) · 전역 규칙 블록 · 선택 셸 가드
+  - `bootstrap/dirmem-setup.sh` — 도구 설치 + Claude·Codex·Gemini 전역 규칙 블록 (멱등)
+- `install.sh` vault 도구 단계 뒤에 dirmem 전역 규칙 블록 설치 추가
+
+### Verified
+- 같은 폴더 30개 동시 기록 무손실, 세 세션(Claude 2·Codex 1) 병렬 실행
+- Claude `--resume` · Codex `exec resume` — 원본 기록 삭제 + 폴더 이동 상태에서 복원·이어 하기 성공
+- 자체 실행기 프로젝트의 `-w` 가 프로젝트 `.command` 와 같은 명령을 구성 (dry-run 대조)
+
 ## [0.2.71] - 2026-09-30
 
 ### Fixed

@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""dirmem-transcripts — LLM 대화 원문을 작업 디렉토리 AI_MEMORY/transcripts/ 로 보관·복원.
+
+  dirmem-transcripts save    <claude|codex> <root> [--since EPOCH]
+  dirmem-transcripts restore <claude|codex> <root>
+
+- save   : 이 맥의 도구 기록 저장소에서 <root> 에서 실행된 대화만 골라 폴더 안으로 복사
+- restore: 폴더 안의 사본을 이 맥의 도구 기록 저장소로 되돌림 (다른 맥에서 이어 하기용)
+같은 파일은 더 최근에 수정된 쪽만 덮어쓴다. 서로 다른 대화는 파일이 달라 병렬 세션끼리 섞이지 않는다.
+폴더를 옮겼으면 복원 시 대화 안의 옛 절대경로·옛 slug 를 새 값으로 치환한다.
+"""
+import json
+import os
+import re
+import shutil
+import sys
+from pathlib import Path
+
+HOME = Path.home()
+CLAUDE_PROJECTS = HOME / ".claude" / "projects"
+CODEX_SESSIONS = Path(os.environ.get("CODEX_HOME", HOME / ".codex")) / "sessions"
+
+
+def claude_slug(path):
+    # Claude Code 의 프로젝트 기록 폴더 이름 규칙: 영숫자 외 문자는 모두 '-'
+    return re.sub(r"[^A-Za-z0-9]", "-", str(path))
+
+
+def newer(src, dst):
+    return not dst.exists() or src.stat().st_mtime > dst.stat().st_mtime + 1
+
+
+def copy_file(src, dst, rewrite=None):
+    if not newer(src, dst):
+        return 0
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if rewrite and src.suffix == ".jsonl":
+        text = src.read_text(encoding="utf-8", errors="surrogateescape")
+        for old, new in rewrite:
+            text = text.replace(old, new)
+        dst.write_text(text, encoding="utf-8", errors="surrogateescape")
+        st = src.stat()
+        os.utime(dst, (st.st_atime, st.st_mtime))
+    else:
+        shutil.copy2(src, dst)
+    return 1
+
+
+def copy_tree(src, dst, rewrite=None):
+    n = 0
+    for f in src.rglob("*"):
+        if f.is_file() and f.name != "ORIGIN":
+            n += copy_file(f, dst / f.relative_to(src), rewrite)
+    return n
+
+
+def claude_cwd_matches(f, root):
+    try:
+        with f.open(encoding="utf-8", errors="replace") as fh:
+            for i, line in enumerate(fh):
+                if i > 50:
+                    break
+                try:
+                    cwd = json.loads(line).get("cwd")
+                except ValueError:
+                    continue
+                if cwd:
+                    return os.path.realpath(cwd) == root
+    except OSError:
+        pass
+    return False
+
+
+def codex_cwd(f):
+    try:
+        with f.open(encoding="utf-8", errors="replace") as fh:
+            meta = json.loads(fh.readline())
+        return (meta.get("payload") or {}).get("cwd")
+    except (OSError, ValueError):
+        return None
+
+
+def save(tool, root, since):
+    store = Path(root) / "AI_MEMORY" / "transcripts" / tool
+    n = 0
+    store.mkdir(parents=True, exist_ok=True)
+    origin = store / "ORIGIN"  # 저장 당시 경로 (이동 감지용)
+    old = origin.read_text(encoding="utf-8").strip() if origin.is_file() else ""
+    if old and old != root:
+        # 폴더가 옮겨진 뒤 처음 저장: 보관본 전체를 새 경로 기준으로 맞춘 뒤 ORIGIN 갱신
+        pairs = [(old, root), (claude_slug(old), claude_slug(root))]
+        for f in store.rglob("*.jsonl"):
+            st = f.stat()
+            text = f.read_text(encoding="utf-8", errors="surrogateescape")
+            for a, b in pairs:
+                text = text.replace(a, b)
+            f.write_text(text, encoding="utf-8", errors="surrogateescape")
+            os.utime(f, (st.st_atime, st.st_mtime))
+    origin.write_text(root + "\n", encoding="utf-8")
+    if tool == "claude":
+        src_dir = CLAUDE_PROJECTS / claude_slug(root)
+        for f in src_dir.glob("*.jsonl") if src_dir.is_dir() else []:
+            if f.stat().st_mtime < since or not claude_cwd_matches(f, root):
+                continue
+            n += copy_file(f, store / f.name)
+            side = src_dir / f.stem  # 서브에이전트·도구 결과 폴더
+            if side.is_dir():
+                n += copy_tree(side, store / f.stem)
+    elif tool == "codex":
+        for f in CODEX_SESSIONS.rglob("rollout-*.jsonl") if CODEX_SESSIONS.is_dir() else []:
+            if f.stat().st_mtime < since:
+                continue
+            cwd = codex_cwd(f)
+            if cwd and os.path.realpath(cwd) == root:
+                n += copy_file(f, store / f.relative_to(CODEX_SESSIONS))
+    return n
+
+
+def restore(tool, root):
+    store = Path(root) / "AI_MEMORY" / "transcripts" / tool
+    if not store.is_dir():
+        return 0
+    rewrite = None
+    origin = store / "ORIGIN"
+    if origin.is_file():
+        old = origin.read_text(encoding="utf-8").strip()
+        if old and old != root:
+            rewrite = [(old, root), (claude_slug(old), claude_slug(root))]
+    if tool == "claude":
+        return copy_tree(store, CLAUDE_PROJECTS / claude_slug(root), rewrite)
+    if tool == "codex":
+        return copy_tree(store, CODEX_SESSIONS, rewrite)
+    return 0
+
+
+def main(argv):
+    if len(argv) < 3 or argv[0] not in ("save", "restore"):
+        print(__doc__.strip(), file=sys.stderr)
+        return 2
+    action, tool, root = argv[0], argv[1], os.path.realpath(argv[2])
+    if tool not in ("claude", "codex"):
+        return 0  # 다른 도구는 아직 대화 원문 이전을 지원하지 않음
+    since = 0.0
+    if "--since" in argv:
+        since = float(argv[argv.index("--since") + 1])
+    n = save(tool, root, since) if action == "save" else restore(tool, root)
+    if n:
+        print(f"대화 원문 {action}: {tool} {n}개 파일")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

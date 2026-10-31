@@ -1,0 +1,196 @@
+#!/bin/bash
+# dirmem — 디렉토리 이식형 AI 공용 기억 (Claude / Codex / Gemini·Antigravity 공용)
+#
+# 기억은 전부 작업 디렉토리 안의 AI_MEMORY/ 에 둔다. 디렉토리를 옮기거나
+# 다른 맥(예: iCloud 동기화 바탕화면)에서 열어도 그대로 이어서 작업할 수 있다.
+#
+# 병렬 안전 원칙
+#   - 세션 일지 AI_MEMORY/sessions/<세션ID>.md : 해당 세션만 쓴다 (잠금 불필요)
+#   - 공유 파일 MEMORY.md / STATUS.md      : 추가(append)는 remember/status 로만,
+#                                            전체 정리(재작성)는 lock → 편집 → unlock
+#
+# 사용법: dirmem help
+set -u
+
+MEMDIR_NAME="AI_MEMORY"
+# ~/.local/bin/dirmem 심볼릭 링크를 따라가 실제 키트 위치를 찾는다
+SELF="$0"
+while [ -L "$SELF" ]; do
+  L="$(readlink "$SELF")"
+  case "$L" in /*) SELF="$L" ;; *) SELF="$(dirname "$SELF")/$L" ;; esac
+done
+# 템플릿 위치: 저장소 안(<repo>/bin/dirmem)이면 자기 위치로, 설치본(~/.herald/bin)이면 알려진 후보를 훑는다
+# (bin/ha-we 의 find_repo 와 같은 후보 순서)
+find_templates() {
+  local c
+  for c in "$(cd "$(dirname "$SELF")/.." 2>/dev/null && pwd)" "${HERALD_AI_DIR:-}" \
+           "$HOME/Code/herald-ai" "$HOME/herald-ai" "$HOME/src/herald-ai"; do
+    [ -n "$c" ] && [ -f "$c/templates/dirmem/AGENTS.md" ] && { echo "$c/templates/dirmem"; return 0; }
+  done
+  return 1
+}
+TEMPLATES="$(find_templates)" || TEMPLATES=""
+
+die() { echo "dirmem: $*" >&2; exit 1; }
+now() { date '+%Y-%m-%d %H:%M:%S'; }
+host() { scutil --get LocalHostName 2>/dev/null || hostname -s; }
+
+# DIR(기본: 현재 위치)에서 위로 올라가며 AI_MEMORY 가 있는 디렉토리를 찾는다.
+find_root() {
+  local d
+  d="$(cd "${1:-.}" 2>/dev/null && pwd)" || return 1
+  while [ -n "$d" ] && [ "$d" != "/" ]; do
+    [ -d "$d/$MEMDIR_NAME" ] && { echo "$d"; return 0; }
+    [ "$d" = "$HOME" ] && break
+    d="$(dirname "$d")"
+  done
+  return 1
+}
+
+need_root() {
+  find_root "${1:-.}" || die "AI_MEMORY 가 있는 작업 디렉토리를 찾지 못했습니다. 먼저 'dirmem init <디렉토리>' 를 실행하세요."
+}
+
+# 잠금: mkdir 은 원자적이다. 10분 넘은 잠금은 비정상 종료로 보고 회수한다.
+lock_acquire() {
+  local lk="$1/$MEMDIR_NAME/.lock" i=0
+  while ! mkdir "$lk" 2>/dev/null; do
+    if [ -n "$(find "$lk" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then
+      rm -rf "$lk"; continue
+    fi
+    i=$((i + 1)); [ $i -ge 600 ] && die "잠금 대기 시간 초과: $lk (보유자: $(cat "$lk/owner" 2>/dev/null))"
+    sleep 0.1
+  done
+  echo "${2:-unknown} $$ $(host) $(now)" > "$lk/owner"
+}
+lock_release() { rm -rf "$1/$MEMDIR_NAME/.lock"; }
+
+# 템플릿을 대상 위치에 둔다. 기존 파일이 있으면 맨 앞에 지시문 블록만 끼워 넣는다.
+place() {
+  local tpl="$1" dst="$2" marker="dirmem:protocol"
+  if [ ! -f "$dst" ]; then
+    cp "$tpl" "$dst"
+  elif ! grep -q "$marker" "$dst"; then
+    { cat "$tpl"; echo; echo "---"; echo; cat "$dst"; } > "$dst.tmp.$$" && mv "$dst.tmp.$$" "$dst"
+  fi
+}
+
+# 이미 폴더 자체 기억 체계(.llm/ 또는 dirmem 이 아닌 CLAUDE.md/AGENTS.md 규칙)가 있으면 건드리지 않는다.
+has_own_system() {
+  [ -d "$1/.llm" ] && return 0
+  local f
+  for f in CLAUDE.md AGENTS.md; do
+    [ -f "$1/$f" ] && ! grep -q "dirmem:protocol" "$1/$f" && return 0
+  done
+  return 1
+}
+
+cmd_init() {
+  [ -n "$TEMPLATES" ] || die "템플릿을 찾지 못했습니다 (herald-ai 저장소 위치를 HERALD_AI_DIR 로 지정하십시오)."
+  local force=0
+  [ "${1:-}" = "--force" ] && { force=1; shift; }
+  local dir="${1:-.}"
+  if [ -d "$dir" ] && [ $force -eq 0 ] && has_own_system "$dir"; then
+    die "이 폴더에는 자체 기억 체계가 있어 적용하지 않습니다 (.llm/ 또는 기존 CLAUDE.md/AGENTS.md): $dir — 그 규칙을 따르십시오. 강제 적용: dirmem init --force"
+  fi
+  mkdir -p "$dir" || die "디렉토리 생성 실패: $dir"
+  dir="$(cd "$dir" && pwd)"
+  local m="$dir/$MEMDIR_NAME"
+  mkdir -p "$m/sessions"
+  [ -f "$m/MEMORY.md" ] || cat > "$m/MEMORY.md" <<EOF
+# 기억 (MEMORY) — $(basename "$dir")
+
+> 이 작업에서 오래 유지할 사실·결정·사용자 선호. 모든 AI 가 공유한다.
+> 추가: \`dirmem remember <agent> "내용"\` / 전체 정리: \`dirmem lock\` → 편집 → \`dirmem unlock\`
+
+- [$(now)] 디렉토리 초기화
+EOF
+  [ -f "$m/STATUS.md" ] || cat > "$m/STATUS.md" <<EOF
+# 현황 (STATUS) — $(basename "$dir")
+
+> 진행 상황·다음 할 일·담당 세션. 추가: \`dirmem status <agent> "내용"\`
+
+EOF
+  place "$TEMPLATES/AGENTS.md" "$dir/AGENTS.md"
+  place "$TEMPLATES/CLAUDE.md" "$dir/CLAUDE.md"
+  place "$TEMPLATES/GEMINI.md" "$dir/GEMINI.md"
+  echo "초기화 완료: $dir"
+}
+
+cmd_start() {
+  local agent="${1:-unknown}" root sid f
+  root="$(need_root "${2:-.}")" || exit 1
+  if [ -n "${DIRMEM_SESSION:-}" ] && [ -f "$DIRMEM_SESSION" ] && [ "$(dirname "$(dirname "$(dirname "$DIRMEM_SESSION")")")" = "$root" ]; then
+    echo "DIRMEM_SESSION=$DIRMEM_SESSION"
+    echo "(marvis llm 이 이미 만든 이번 세션 일지를 그대로 사용합니다)"
+    echo
+    cmd_context "$root"
+    return 0
+  fi
+  sid="$(date '+%y%m%d-%H%M%S')_${agent}_$(host)_$$"
+  f="$root/$MEMDIR_NAME/sessions/$sid.md"
+  cat > "$f" <<EOF
+# 세션 $sid
+
+- 에이전트: $agent / 호스트: $(host) / 시작: $(now)
+- 디렉토리: $root
+
+## 일지
+EOF
+  echo "DIRMEM_SESSION=$f"
+  echo
+  cmd_context "$root"
+}
+
+cmd_log() {
+  local f="${1:-}"
+  if [ -f "$f" ]; then shift; else f="${DIRMEM_SESSION:-}"; fi
+  [ -f "$f" ] || die "세션 파일이 없습니다: $f"
+  printf -- '- [%s] %s\n' "$(now)" "$*" >> "$f"
+}
+
+append_shared() {
+  local file="$1" agent="$2" text="$3" root
+  root="$(need_root .)" || exit 1
+  lock_acquire "$root" "$agent"
+  printf -- '- [%s %s@%s] %s\n' "$(now)" "$agent" "$(host)" "$text" >> "$root/$MEMDIR_NAME/$file"
+  lock_release "$root"
+}
+
+cmd_context() {
+  local root
+  root="$(need_root "${1:-.}")" || exit 1
+  local m="$root/$MEMDIR_NAME"
+  echo "===== 작업 디렉토리: $root ====="
+  echo; cat "$m/MEMORY.md"
+  echo; cat "$m/STATUS.md"
+  echo; echo "===== 최근 세션 일지 (최근 5개, 각 끝 15줄) ====="
+  ls -1t "$m/sessions/"*.md 2>/dev/null | head -5 | while read -r s; do
+    echo; echo "--- $(basename "$s")"; tail -n 15 "$s"
+  done
+}
+
+case "${1:-help}" in
+  init)     shift; cmd_init "$@" ;;
+  start)    shift; cmd_start "$@" ;;
+  log)      shift; cmd_log "$@" ;;
+  remember) shift; [ $# -ge 2 ] || die "사용법: dirmem remember <agent> \"내용\""; append_shared MEMORY.md "$1" "$2" ;;
+  status)   shift; [ $# -ge 2 ] || die "사용법: dirmem status <agent> \"내용\""; append_shared STATUS.md "$1" "$2" ;;
+  context)  shift; cmd_context "$@" ;;
+  root)     shift; need_root "${1:-.}" ;;
+  lock)     shift; r="$(need_root .)" || exit 1; lock_acquire "$r" "${1:-manual}"; echo "잠금 획득: $r" ;;
+  unlock)   r="$(need_root .)" || exit 1; lock_release "$r"; echo "잠금 해제: $r" ;;
+  *) cat <<'EOF'
+dirmem — 디렉토리 이식형 AI 공용 기억
+  dirmem init [--force] [DIR]       작업 디렉토리에 AI_MEMORY/·AGENTS.md·CLAUDE.md·GEMINI.md 생성
+  dirmem start <agent> [DIR]        세션 일지 생성 + 기억/현황/최근 일지 출력 (DIRMEM_SESSION=경로)
+  dirmem log [세션파일] "내용"       내 세션 일지에 기록 (생략 시 $DIRMEM_SESSION, 병렬 안전)
+  dirmem remember <agent> "내용"     MEMORY.md 에 잠금 후 추가
+  dirmem status <agent> "내용"       STATUS.md 에 잠금 후 추가
+  dirmem context [DIR]              기억/현황/최근 일지 출력
+  dirmem lock <agent> | unlock       공유 파일 전체 정리 전후 잠금
+  dirmem root [DIR]                 작업 디렉토리 루트 출력
+  agent: claude | codex | gemini
+EOF
+  ;;
+esac

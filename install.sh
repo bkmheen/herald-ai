@@ -105,6 +105,13 @@ else
     warn "bin 디렉토리 없음 — vault 도구 건너뜀"
 fi
 
+# 2.8) 디렉토리 기억(dirmem·marvis) 전역 규칙 ---------------------
+# 도구 자체는 위 단계에서 ~/.herald/bin 에 설치됐다. 여기서는 Claude·Codex·Gemini 의
+# 전역 지시 파일에 공통 규칙 블록만 넣는다 (멱등, 바뀔 때만 백업). 상세: docs/DIRMEM.md
+if [ -f "$REPO_DIR/bootstrap/dirmem-setup.sh" ]; then
+    bash "$REPO_DIR/bootstrap/dirmem-setup.sh" --rules-only || warn "dirmem 규칙 블록 설치 실패 — bash bootstrap/dirmem-setup.sh"
+fi
+
 # 3) 텔레그램 자격증명 -----------------------------------------
 say "[5/7] 텔레그램 설정"
 if [ -f "$CONF" ]; then

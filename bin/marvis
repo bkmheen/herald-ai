@@ -1,0 +1,292 @@
+#!/bin/bash
+# marvis — 현재 디렉토리에서 LLM CLI 를 "디렉토리 기억" 환경으로 띄우는 실행기
+#
+#   marvis llm claude [-w] [CLI 인자...]   Claude Code        (-w: 새 iTerm 창에서)
+#   marvis llm codex  [-w] [CLI 인자...]   Codex (ChatGPT)
+#   marvis llm gemini [-w] [CLI 인자...]   Antigravity (agy)
+#   marvis llm ls                          이 디렉토리의 실행 중 세션·최근 일지
+#   marvis mode [parallel|single|auto]     이 폴더의 실행 모드 보기·지정
+#
+# 실행기가 하는 일 (LLM 의 지시 준수에 기대지 않고 실행 단계에서 보장)
+#   1. 폴더 유형 판별: 자체 실행기 프로젝트 → 그 실행기에 위임 / 자체 기억 체계(.llm 등) → 그 규칙 유지 /
+#      그 외 → dirmem (없으면 자동 init)
+#   2. 각 도구의 자체 기억을 실행 옵션으로 끈다 (Claude autoMemory, Codex memories)
+#   3. 세션 일지를 만들고 DIRMEM_SESSION 으로 넘긴 뒤, 시작 시점의 기억·현황·최근 일지를 주입한다
+#   4. 실행 모드: parallel = 같은 폴더 동시 세션 허용 / single = 다른 세션이 있으면 확인
+#      기본값은 바탕화면 아래와 자체 실행기 프로젝트가 parallel, 그 외 single. 폴더의 .marvis.conf 가 우선한다
+#   5. 대화 원문: 시작 시 폴더 안 사본을 이 맥에 복원, 종료 시 폴더 안으로 저장 (다른 맥에서 이어 하기)
+set -u
+
+SELF="$0"
+while [ -L "$SELF" ]; do
+  L="$(readlink "$SELF")"
+  case "$L" in /*) SELF="$L" ;; *) SELF="$(dirname "$SELF")/$L" ;; esac
+done
+KIT_BIN="$(cd "$(dirname "$SELF")" && pwd)"
+DIRMEM="$KIT_BIN/dirmem"
+TRANSCRIPTS="$KIT_BIN/dirmem-transcripts"
+CONF_NAME=".marvis.conf"
+
+die() { echo "marvis: $*" >&2; exit 1; }
+HERE="$(pwd -P)"
+DESK="$(cd "$HOME/Desktop" 2>/dev/null && pwd -P)"
+
+under_desktop() { [ "$1" = "$DESK" ] || case "$1/" in "$DESK"/*) return 0 ;; *) return 1 ;; esac; }
+
+# 같은 디렉토리에서 실행 중인 claude/codex/agy 세션 목록
+live_sessions() {
+  lsof -a -d cwd -c claude -c codex -c agy -Fpcn 2>/dev/null | awk -v d="$1" '
+    /^p/ { pid = substr($0, 2) }
+    /^c/ { cmd = substr($0, 2) }
+    /^n/ { if (substr($0, 2) == d) print "  - PID " pid " (" cmd ")" }'
+}
+
+# 폴더 유형: lct | own | dirmem | none
+folder_kind() {
+  local d="$1"
+  if [ -f "$d/_tools/session_start.py" ] && [ -f "$d/_SESSION-POLICY.md" ]; then echo lct; return; fi
+  if [ -d "$d/AI_MEMORY" ]; then echo dirmem; return; fi
+  if [ -d "$d/.llm" ]; then echo own; return; fi
+  local f
+  for f in CLAUDE.md AGENTS.md; do
+    [ -f "$d/$f" ] && ! grep -q "dirmem:protocol" "$d/$f" && { echo own; return; }
+  done
+  echo none
+}
+
+# 자체 실행기 프로젝트(_tools/session_start.py + _SESSION-POLICY.md) 루트 찾기 (하위 폴더에서 실행해도 루트의 실행기를 쓴다)
+find_lct_root() {
+  local d="$1"
+  while [ "$d" != "/" ] && [ "$d" != "$HOME" ]; do
+    [ "$(folder_kind "$d")" = lct ] && { echo "$d"; return 0; }
+    d="$(dirname "$d")"
+  done
+  return 1
+}
+
+# 실행 모드 결정. 출력: "<parallel|single> <근거>"
+resolve_mode() {
+  local d="$1" m
+  while [ "$d" != "/" ]; do
+    if [ -f "$d/$CONF_NAME" ]; then
+      m="$(sed -n 's/^[[:space:]]*mode[[:space:]]*=[[:space:]]*\([a-z]*\).*/\1/p' "$d/$CONF_NAME" | head -1)"
+      case "$m" in parallel|single) echo "$m $d/$CONF_NAME"; return ;; esac
+    fi
+    [ "$d" = "$HOME" ] && break
+    d="$(dirname "$d")"
+  done
+  if find_lct_root "$1" >/dev/null; then echo "parallel 자체 실행기 프로젝트 기본값 (폴더 수정권은 프로젝트 규정이 관리)"; return; fi
+  if under_desktop "$1"; then echo "parallel 바탕화면 기본값"; return; fi
+  echo "single 기본값 (바탕화면 밖)"
+}
+
+guard_mode() {
+  local dir="$1" mode
+  mode="$(resolve_mode "$dir" | cut -d' ' -f1)"
+  [ "$mode" = parallel ] && return 0
+  local others; others="$(live_sessions "$dir")"
+  [ -z "$others" ] && return 0
+  echo "⚠️  이 디렉토리에서 이미 AI 세션이 실행 중입니다: $dir" >&2
+  echo "$others" >&2
+  echo "이 폴더는 단일 모드입니다 (한 디렉토리에 한 세션). 병렬로 쓰려면: marvis mode parallel" >&2
+  local ans; read -r -p "그래도 실행하시겠습니까? [y/N] " ans
+  case "$ans" in [yY]*) return 0 ;; *) exit 1 ;; esac
+}
+
+# 새 iTerm 창에서 명령 실행
+open_window() {   # open_window <창 이름> <디렉토리> <명령...>
+  local label="$1" dir="$2"; shift 2
+  [ -d /Applications/iTerm.app ] || die "iTerm 이 없습니다 (/Applications/iTerm.app)."
+  local q; q="$(printf '%q ' "$@")"
+  local cmd="/bin/zsh -lc $(printf '%q' "cd $(printf '%q' "$dir") && $q; printf '\\n세션이 끝났습니다. Return 을 누르면 창을 닫습니다.\\n'; read reply")"
+  /usr/bin/osascript - "$label" "$cmd" <<'APPLESCRIPT' >/dev/null || die "iTerm 창을 열지 못했습니다 (macOS 자동화 권한 확인)."
+on run argv
+  tell application "/Applications/iTerm.app"
+    activate
+    set win to (create window with default profile command (item 2 of argv))
+    tell current session of win to set name to (item 1 of argv)
+  end tell
+end run
+APPLESCRIPT
+  echo "새 iTerm 창에서 시작했습니다: $label"
+}
+
+run_tool() {   # run_tool <tool> <dir> <session-file|""> <intro> [args...]
+  local tool="$1" dir="$2" sess="$3" intro="$4"; shift 4
+  local name; name="$(basename "$dir")-$tool-$(date +%H%M)"
+  export DIRMEM_AGENT="$tool"
+  [ -n "$sess" ] && export DIRMEM_SESSION="$sess"
+  local started; started="$(date +%s)"
+  [ -n "$sess" ] && python3 "$TRANSCRIPTS" restore "$tool" "$dir"
+  cd "$dir" || exit 1
+  case "$tool" in
+    claude)
+      CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 command claude -n "$name" \
+        --settings '{"autoMemoryEnabled":false}' \
+        --append-system-prompt "$intro" "$@" ;;
+    codex)
+      # 첫 지시문으로 기억을 넘긴다. 단 resume/fork 이거나 사용자가 직접 지시문을 준 경우는 그대로 둔다
+      local first=1 a skip=0
+      for a in "$@"; do
+        if [ $skip -eq 1 ]; then skip=0; continue; fi
+        case "$a" in
+          -s|--sandbox|-m|--model|-c|--config|-p|--profile|-a|--ask-for-approval|-i|--image) skip=1 ;;
+          -*|exec|e) ;;
+          *) first=0 ;;
+        esac
+      done
+      [ $first -eq 1 ] && set -- "$@" "$intro
+
+위 기억을 이어받았음을 한두 줄로 확인한 뒤, 사용자의 요청을 기다리십시오."
+      command codex -C "$dir" \
+        -c features.memories=false -c memories.generate_memories=false -c memories.use_memories=false \
+        "$@" ;;
+    gemini)
+      command agy -i "$intro
+
+위 기억을 이어받았음을 한두 줄로 확인한 뒤, 사용자의 요청을 기다리십시오." "$@" ;;
+  esac
+  local rc=$?
+  if [ -n "$sess" ]; then
+    python3 "$TRANSCRIPTS" save "$tool" "$dir" --since "$((started - 60))"
+    "$DIRMEM" log "$sess" "세션 종료 (marvis llm $tool, 종료코드 $rc)" 2>/dev/null
+  fi
+  return $rc
+}
+
+cmd_llm() {
+  local tool="${1:-}"; shift || true
+  case "$tool" in
+    claude|codex) ;;
+    gemini|agy) tool=gemini ;;
+    ls) cmd_ls; return ;;
+    ""|-h|--help|help) usage; return ;;
+    *) die "지원하지 않는 도구: $tool (claude | codex | gemini)" ;;
+  esac
+  local bin="$tool"; [ "$tool" = gemini ] && bin=agy
+  command -v "$bin" >/dev/null || die "$bin CLI 를 찾을 수 없습니다."
+
+  local window=0
+  if [ "${1:-}" = "-w" ] || [ "${1:-}" = "--window" ]; then window=1; shift; fi
+
+  # 1) 자체 실행기 프로젝트: 그 실행기에 위임 (프로젝트의 Finder 용 .command 와 같은 조건)
+  local lct
+  if lct="$(find_lct_root "$HERE")"; then
+    [ "$tool" = gemini ] && die "이 프로젝트는 Gemini 실행기가 검증되지 않아 읽기 전용입니다 (_SESSION-POLICY.md)."
+    guard_mode "$lct"
+    cd "$lct" || exit 1
+    export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"   # 프로젝트 .command 와 같은 PATH (Homebrew 우선)
+    local cmode=(--claude-mode "${MARVIS_CLAUDE_MODE:-background}")
+    [ "$tool" = codex ] && cmode=(--codex-mode "${MARVIS_CODEX_MODE:-shared}")
+    if [ $window -eq 1 ]; then
+      # 프로젝트 .command 와 동일한 경로 (프로젝트의 iTerm 실행기)
+      exec python3 -B _tools/iterm_sessions.py launch --tool "$tool" "${cmode[@]}" "$@"
+    fi
+    local lname="${MARVIS_SESSION_PREFIX:-LCT}_$(date +%y%m%d)a-$tool-$(uuidgen | tr -d - | tr 'A-Z' 'a-z' | cut -c1-10)"
+    echo "프로젝트 실행기로 시작합니다: $lct ($lname)"
+    exec python3 -B _tools/session_start.py "$tool" --name "$lname" "${cmode[@]}" "$@"
+  fi
+
+  if [ $window -eq 1 ]; then
+    open_window "$(basename "$HERE")-$tool-$(date +%H%M)" "$HERE" marvis llm "$tool" "$@"
+    return
+  fi
+
+  # 홈·바탕화면 자체에는 기억을 두지 않는다 (작업 폴더를 만들면 전역 규칙이 dirmem init 을 수행)
+  if [ "$HERE" = "$HOME" ] || [ "$HERE" = "$DESK" ]; then
+    echo "ℹ️  $(basename "$HERE") 자체에는 디렉토리 기억을 두지 않습니다. 작업 폴더를 만들면 그 폴더에 기억이 생성됩니다."
+    run_tool "$tool" "$HERE" "" "[marvis llm] 현재 위치($HERE)는 기억을 두지 않는 상위 폴더입니다. 작업 디렉토리를 만들면 즉시 dirmem init 하고 그 안에 기억을 기록하십시오." "$@"
+    return
+  fi
+
+  local kind; kind="$(folder_kind "$HERE")"
+  if [ "$kind" = own ]; then
+    guard_mode "$HERE"
+    echo "ℹ️  이 폴더는 자체 기억 체계를 사용합니다. 폴더 규칙(CLAUDE.md/AGENTS.md)을 따르며 dirmem 은 쓰지 않습니다."
+    run_tool "$tool" "$HERE" "" "[marvis llm] 이 폴더는 자체 기억 체계를 사용합니다. 작업 전에 이 폴더의 CLAUDE.md/AGENTS.md 와 그 규칙이 가리키는 기억·진행 파일을 먼저 읽고 따르십시오. 각 AI 의 전역 기억에는 저장하지 않습니다." "$@"
+    return
+  fi
+
+  local root
+  root="$("$DIRMEM" root "$HERE" 2>/dev/null)" || {
+    echo "이 폴더에 디렉토리 기억을 초기화합니다: $HERE"
+    "$DIRMEM" init "$HERE" || exit 1
+    root="$HERE"
+  }
+  [ "$root" != "$HERE" ] && echo "ℹ️  작업 디렉토리 루트에서 시작합니다: $root"
+  guard_mode "$root"
+
+  local out sess ctx mode
+  mode="$(resolve_mode "$root" | cut -d' ' -f1)"
+  out="$(cd "$root" && DIRMEM_SESSION= "$DIRMEM" start "$tool")" || exit 1
+  sess="$(echo "$out" | sed -n 's/^DIRMEM_SESSION=//p' | head -1)"
+  ctx="$(echo "$out" | sed '1d')"
+  [ "$tool" = gemini ] && ctx="$(printf '%s' "$ctx" | head -c 6000)"
+
+  local intro="[marvis llm — 디렉토리 기억 세션]
+- 작업 디렉토리: $root
+- 이번 세션 일지: $sess (환경변수 DIRMEM_SESSION 에도 설정됨. dirmem start 는 이미 수행되었으니 다시 만들지 마십시오)
+- 기록: dirmem log \"내용\" / 오래 유지할 사실: dirmem remember $tool \"내용\" / 현황·담당: dirmem status $tool \"내용\"
+- 이 작업의 기억은 이 디렉토리 AI_MEMORY/ 에만 둡니다. 이 도구의 자체 기억은 실행 옵션으로 꺼져 있습니다.
+$([ "$mode" = parallel ] && echo "- 병렬 모드 폴더입니다. 다른 터미널의 세션이 같은 폴더에서 동시에 작업할 수 있습니다. 다른 세션의 일지는 읽기만 하고, 맡을 작업은 먼저 dirmem status 로 표시하십시오.")
+
+===== 시작 시점의 기억·현황·최근 일지 =====
+$ctx"
+
+  echo "세션 일지: ${sess#$root/}  (모드: $mode)"
+  run_tool "$tool" "$root" "$sess" "$intro" "$@"
+}
+
+cmd_mode() {
+  local want="${1:-}" target lct
+  if lct="$(find_lct_root "$HERE")"; then target="$lct"
+  else target="$("$DIRMEM" root "$HERE" 2>/dev/null)" || target="$HERE"
+  fi
+  case "$want" in
+    "") echo "폴더: $target"; echo "모드: $(resolve_mode "$target")" ;;
+    parallel|single)
+      [ "$target" = "$HOME" ] && die "홈 디렉토리에는 모드를 지정하지 않습니다."
+      printf 'mode=%s\n' "$want" > "$target/$CONF_NAME"
+      echo "모드 지정: $want → $target/$CONF_NAME" ;;
+    auto)
+      rm -f "$target/$CONF_NAME"
+      echo "기본값으로 되돌림: $(resolve_mode "$target")" ;;
+    *) die "사용법: marvis mode [parallel|single|auto]" ;;
+  esac
+}
+
+cmd_ls() {
+  local root lct
+  if lct="$(find_lct_root "$HERE")"; then root="$lct"
+  else root="$("$DIRMEM" root "$HERE" 2>/dev/null)" || root="$HERE"
+  fi
+  echo "디렉토리: $root"
+  echo "모드: $(resolve_mode "$root")"
+  echo "실행 중 세션:"; local s; s="$(live_sessions "$root")"; echo "${s:-  (없음)}"
+  if [ -d "$root/AI_MEMORY/sessions" ]; then
+    echo "최근 세션 일지:"
+    ls -1t "$root/AI_MEMORY/sessions/" 2>/dev/null | head -8 | sed 's/^/  - /'
+  else
+    echo "디렉토리 기억 유형: $(folder_kind "$root")"
+  fi
+}
+
+usage() {
+  cat <<'EOF'
+marvis llm <claude|codex|gemini> [-w] [CLI 인자...]   현재 디렉토리에서 디렉토리 기억 세션 시작
+                                                     -w: 새 iTerm 창에서 시작
+marvis llm ls                                       모드·실행 중 세션·최근 일지 보기
+marvis mode [parallel|single|auto]                  이 폴더의 실행 모드 보기·지정·기본값 복귀
+  - parallel: 같은 폴더에서 여러 터미널 동시 실행 허용 (바탕화면 아래·자체 실행기 프로젝트 기본값)
+  - single  : 같은 폴더에 세션이 있으면 확인 후 실행 (그 외 기본값)
+  - 자체 실행기 프로젝트(_tools/session_start.py): 그 실행기로 위임. -w 는 프로젝트 iTerm 실행기
+      MARVIS_CLAUDE_MODE=foreground|background (기본 background)
+      MARVIS_CODEX_MODE=shared|embedded|agents  (기본 shared)
+EOF
+}
+
+case "${1:-}" in
+  llm) shift; cmd_llm "$@" ;;
+  mode) shift; cmd_mode "$@" ;;
+  *) usage ;;
+esac
